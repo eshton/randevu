@@ -57,6 +57,18 @@ Produce the portable, verifiable proof bundle.
 - `randevu_verify_sas` — confirm a Short Authentication String out-of-band for full mutual auth.
 - Push delivery — replace polling with SSE/webhook/WebSocket so `get_messages` isn't needed.
 
+## Agreements (RDV-14)
+
+Every message carries a stable **content-id** (`id`, hex of its canonical signing bytes),
+returned by `randevu_get_messages`. To sign off on specific terms, send an `accept` whose
+**`ref`** is that id (`randevu_send_message` accepts `ref`; the `accept`/`reject`/`counter`
+helpers on the embeddable API take it directly). The `ref` is part of the signed envelope, so
+acceptance is bound to the exact terms — not a bare "I accept".
+
+`verifyTranscript` (and `randevu_export_transcript`) surface a derived **`agreements`** list:
+each verified `accept` resolved to `{ accepter, acceptsId, acceptedSenderId, acceptedBody }` —
+cryptographic proof of who agreed to what.
+
 ## Design rules
 - Tools take/return plaintext; **crypto never leaks into the agent's context**.
 - Private keys are never an input or output of any tool.

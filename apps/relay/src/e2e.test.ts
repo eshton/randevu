@@ -188,4 +188,28 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect(verdict.messages.map((m) => m.body)).toEqual(["Offer 100", "Accept"]);
     expect(verdict.messages.map((m) => m.senderId)).toEqual([alice.memberId, bob.memberId]);
   });
+
+  it("binds an acceptance to specific terms (RDV-14 agreements)", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.getStatus();
+    await bob.getStatus();
+
+    // Alice offers; Bob reads the offer's content-id and accepts exactly those terms.
+    await alice.offer("Price 18000, delivery in 30 days");
+    const [offerMsg] = await bob.receive();
+    await bob.accept(offerMsg!.id, "agreed");
+
+    const bundle = await alice.exportTranscript();
+    const verdict = verifyTranscript(bundle);
+
+    expect(verdict.valid).toBe(true);
+    expect(verdict.agreements).toHaveLength(1);
+    expect(verdict.agreements[0]!.accepter).toBe(bob.memberId);
+    expect(verdict.agreements[0]!.acceptedSenderId).toBe(alice.memberId);
+    expect(verdict.agreements[0]!.acceptedBody).toBe("Price 18000, delivery in 30 days");
+  });
 });

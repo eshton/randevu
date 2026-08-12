@@ -30,6 +30,7 @@ export interface MessageDTO {
   signature: string;
   type: string;
   prevHash: string | null;
+  ref: string | null;
 }
 
 export class RelayError extends Error {

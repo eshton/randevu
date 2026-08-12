@@ -56,6 +56,8 @@ export interface SignableEnvelope extends EnvelopeContext {
   type: MessageType;
   /** Running transcript hash of prior messages (RDV-12); null for the first message. */
   prevHash: Uint8Array | null;
+  /** Content-id of a referenced message (e.g. the offer an `accept` binds to); null if none. */
+  ref?: string | null;
   nonce: Uint8Array;
   ciphertext: Uint8Array;
 }
@@ -72,11 +74,17 @@ export function messageSigningBytes(env: SignableEnvelope): Uint8Array {
     String(env.epoch),
     env.senderId,
     env.type,
+    env.ref ?? "",
     env.prevHash ? bytesToHex(env.prevHash) : "",
     bytesToHex(env.nonce),
     bytesToHex(env.ciphertext),
   ].join("|");
   return sha256(utf8ToBytes(canonical));
+}
+
+/** Content-id of a message: hex of its canonical signing bytes. Stable across parties. */
+export function messageId(env: SignableEnvelope): string {
+  return bytesToHex(messageSigningBytes(env));
 }
 
 /** Sign a message envelope with the sender's Ed25519 identity key (non-repudiation). */

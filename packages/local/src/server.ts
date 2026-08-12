@@ -13,6 +13,7 @@ import {
   signMessage,
   verifyMessage,
   messageSigningBytes,
+  messageId,
   chainHash,
   didKeyFromEd25519,
   type IdentityKeyPair,
@@ -39,6 +40,8 @@ interface LogEntry {
   verified: boolean;
   chainOk: boolean;
   body: string;
+  /** Content-id of this message. */
+  id: string;
   /** Raw wire message, retained for transcript export (RDV-15). */
   dto: MessageDTO;
 }
@@ -52,9 +55,13 @@ export interface RandevuLocalOptions {
 
 export interface ReceivedMessage {
   seq: number;
+  /** Content-id — reference this to accept/reject/counter these exact terms. */
+  id: string;
   senderId: string;
   type: MessageType;
   body: string;
+  /** Content-id this message references (e.g. the offer an accept binds to); null if none. */
+  ref: string | null;
   /** True only if the sender's signature verified against their pinned identity key. */
   verified: boolean;
 }
@@ -253,6 +260,7 @@ export class RandevuLocal {
         ...ctx,
         type: m.type as MessageType,
         prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
+        ref: m.ref,
         nonce: hexToBytes(m.nonce),
         ciphertext: hexToBytes(m.ciphertext),
       };
@@ -261,6 +269,7 @@ export class RandevuLocal {
         ? verifyMessage(env, hexToBytes(m.signature), hexToBytes(sender.identityPub))
         : false;
       const chainOk = bytesEqualNullable(env.prevHash, this.head);
+      const id = messageId(env);
       this.head = chainHash(this.head, messageSigningBytes(env));
 
       const verified = sigOk && chainOk;
@@ -270,13 +279,17 @@ export class RandevuLocal {
       if (verified && m.senderId !== this.memberId && key) {
         body = decryptMessage(key, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
       }
-      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body, dto: m });
+      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body, id, dto: m });
       this.fetchedSeq = Math.max(this.fetchedSeq, m.seq);
     }
   }
 
-  /** Encrypt + sign a message (chained to the current transcript head) and post it. */
-  async send(body: string, type: MessageType = "message"): Promise<number> {
+  /**
+   * Encrypt + sign a message (chained to the current transcript head) and post it.
+   * `ref` binds this message to the content-id of another (e.g. an accept → its offer),
+   * so acceptance of specific terms is non-repudiable.
+   */
+  async send(body: string, type: MessageType = "message", ref: string | null = null): Promise<number> {
     const sessionId = this.requireSession();
     await this.ensureKeys();
     if (!this.groupKey) throw new Error("group key not ready — the other party may not have joined yet");
@@ -287,6 +300,7 @@ export class RandevuLocal {
       ...ctx,
       type,
       prevHash: this.head,
+      ref,
       nonce: enc.nonce,
       ciphertext: enc.ciphertext,
     };
@@ -299,8 +313,29 @@ export class RandevuLocal {
       signature: bytesToHex(signature),
       type,
       prevHash: this.head ? bytesToHex(this.head) : null,
+      ref,
     });
     return seq;
+  }
+
+  /** Make an offer. */
+  offer(body: string): Promise<number> {
+    return this.send(body, "offer");
+  }
+
+  /** Counter a prior message (optionally referencing it by content-id). */
+  counter(body: string, ref: string | null = null): Promise<number> {
+    return this.send(body, "counter", ref);
+  }
+
+  /** Sign off on the exact terms in message `ref` (non-repudiable acceptance). */
+  accept(ref: string, note = ""): Promise<number> {
+    return this.send(note, "accept", ref);
+  }
+
+  /** Reject the terms in message `ref`. */
+  reject(ref: string, note = ""): Promise<number> {
+    return this.send(note, "reject", ref);
   }
 
   /**
@@ -317,9 +352,11 @@ export class RandevuLocal {
       if (entry.senderId === this.memberId) continue;
       out.push({
         seq: entry.seq,
+        id: entry.id,
         senderId: entry.senderId,
         type: entry.type,
         body: entry.body,
+        ref: entry.dto.ref,
         verified: entry.verified,
       });
     }
@@ -353,6 +390,7 @@ export class RandevuLocal {
           nonce: e.dto.nonce,
           ciphertext: e.dto.ciphertext,
           prevHash: e.dto.prevHash,
+          ref: e.dto.ref,
           signature: e.dto.signature,
         })),
     };

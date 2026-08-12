@@ -1,4 +1,4 @@
-import { hexToBytes } from "@noble/hashes/utils";
+import { hexToBytes, bytesToHex } from "@noble/hashes/utils";
 import {
   verifyMessage,
   messageSigningBytes,
@@ -25,6 +25,7 @@ export interface TranscriptMessageEntry {
   nonce: string;
   ciphertext: string;
   prevHash: string | null;
+  ref: string | null;
   signature: string;
 }
 
@@ -43,12 +44,24 @@ export interface TranscriptBundle {
 
 export interface VerifiedTranscriptMessage {
   seq: number;
+  /** Content-id (hex of canonical signing bytes) — stable reference target. */
+  id: string;
   senderId: string;
   type: MessageType;
+  /** Content-id of the message this one references (e.g. an accept's offer); null if none. */
+  ref: string | null;
   /** Decrypted plaintext, or null if it could not be verified/decrypted. */
   body: string | null;
   signatureValid: boolean;
   chainValid: boolean;
+}
+
+/** A resolved acceptance: who signed off on which terms. The core non-repudiation payoff. */
+export interface Agreement {
+  accepter: string;
+  acceptsId: string;
+  acceptedSenderId: string | null;
+  acceptedBody: string | null;
 }
 
 export interface TranscriptVerification {
@@ -56,6 +69,8 @@ export interface TranscriptVerification {
   valid: boolean;
   membersValid: boolean;
   messages: VerifiedTranscriptMessage[];
+  /** Signed acceptances, each bound to the exact terms it accepted. */
+  agreements: Agreement[];
 }
 
 function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -90,6 +105,7 @@ export function verifyTranscript(bundle: TranscriptBundle): TranscriptVerificati
   let head: Uint8Array | null = null;
   let valid = membersValid;
   const messages: VerifiedTranscriptMessage[] = [];
+  const byId = new Map<string, VerifiedTranscriptMessage>();
 
   for (const m of ordered) {
     const env: SignableEnvelope = {
@@ -98,13 +114,16 @@ export function verifyTranscript(bundle: TranscriptBundle): TranscriptVerificati
       senderId: m.senderId,
       type: m.type,
       prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
+      ref: m.ref,
       nonce: hexToBytes(m.nonce),
       ciphertext: hexToBytes(m.ciphertext),
     };
+    const signingBytes = messageSigningBytes(env);
+    const id = bytesToHex(signingBytes);
     const pub = idByFingerprint.get(m.senderId);
     const signatureValid = pub ? verifyMessage(env, hexToBytes(m.signature), pub) : false;
     const chainValid = bytesEqualNullable(env.prevHash, head);
-    head = chainHash(head, messageSigningBytes(env));
+    head = chainHash(head, signingBytes);
 
     let body: string | null = null;
     const gk = keyByEpoch.get(m.epoch);
@@ -121,8 +140,31 @@ export function verifyTranscript(bundle: TranscriptBundle): TranscriptVerificati
     }
 
     if (!signatureValid || !chainValid || body === null) valid = false;
-    messages.push({ seq: m.seq, senderId: m.senderId, type: m.type, body, signatureValid, chainValid });
+    const vm: VerifiedTranscriptMessage = {
+      seq: m.seq,
+      id,
+      senderId: m.senderId,
+      type: m.type,
+      ref: m.ref,
+      body,
+      signatureValid,
+      chainValid,
+    };
+    messages.push(vm);
+    byId.set(id, vm);
   }
 
-  return { valid, membersValid, messages };
+  const agreements: Agreement[] = messages
+    .filter((m) => m.type === "accept" && m.ref && m.signatureValid && m.chainValid)
+    .map((m) => {
+      const accepted = byId.get(m.ref as string);
+      return {
+        accepter: m.senderId,
+        acceptsId: m.ref as string,
+        acceptedSenderId: accepted?.senderId ?? null,
+        acceptedBody: accepted?.body ?? null,
+      };
+    });
+
+  return { valid, membersValid, messages, agreements };
 }

@@ -16,6 +16,7 @@ export {
   encryptMessage,
   decryptMessage,
   messageSigningBytes,
+  messageId,
   signMessage,
   verifyMessage,
   chainHash,
@@ -33,4 +34,5 @@ export {
   type TranscriptMessageEntry,
   type TranscriptVerification,
   type VerifiedTranscriptMessage,
+  type Agreement,
 } from "./transcript";

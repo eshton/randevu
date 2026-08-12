@@ -36,6 +36,8 @@ export interface StoredMessage {
   signature: string;
   type: string;
   prevHash: string | null;
+  /** Content-id of a referenced message (e.g. an accept's offer); null if none. Opaque. */
+  ref: string | null;
 }
 
 export class SessionError extends Error {

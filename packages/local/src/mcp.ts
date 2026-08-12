@@ -42,8 +42,12 @@ export function createMcpServer(local: RandevuLocal): McpServer {
         .enum(["message", "offer", "counter", "accept", "reject"])
         .optional()
         .describe("Negotiation message type (default: message)."),
+      ref: z
+        .string()
+        .optional()
+        .describe("Content-id of a message to bind to — e.g. the offer that an 'accept' signs off on."),
     },
-    async ({ body, type }) => json({ seq: await local.send(body, type ?? "message") }),
+    async ({ body, type, ref }) => json({ seq: await local.send(body, type ?? "message", ref ?? null) }),
   );
 
   server.tool(

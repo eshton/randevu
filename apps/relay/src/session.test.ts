@@ -82,6 +82,7 @@ describe("Messages (RDV-5/7)", () => {
       signature: "sig",
       type: "message",
       prevHash: null,
+      ref: null,
       ...extra,
     };
   }
@@ -137,6 +138,7 @@ describe("Status", () => {
       signature: "sig",
       type: "message",
       prevHash: null,
+      ref: null,
     });
     const st = await s.status();
     expect(st.sessionId).toBe("rdv_test");

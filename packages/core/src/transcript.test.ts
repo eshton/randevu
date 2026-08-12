@@ -44,6 +44,7 @@ function buildBundle(): TranscriptBundle {
         nonce: bytesToHex(enc.nonce),
         ciphertext: bytesToHex(enc.ciphertext),
         prevHash: null,
+        ref: null,
         signature: bytesToHex(sig),
       },
     ],
