@@ -36,12 +36,13 @@ unwrapped key against the holder's signed commitment using the holder's pinned i
 Neither another member nor the relay can substitute the key without a forgery. Covered by tests
 (core holder-signature; e2e relay-substitution rejected).
 
-### F2 (MEDIUM) — Only the creator is anti-MITM-verified (multi-party)
-The invite commits to the **creator's** fingerprint only. In a 3+-party session, non-creator
-members' keys are relay-attested (TOFU) — a malicious relay could substitute a later joiner's
-key, and messages from that member would verify against the substituted key. → covered by
-**RDV-17 (SAS mutual auth)**; until then, multi-party trust in non-creator members is TOFU.
-Documented in ENCRYPTION.md residuals.
+### F2 (MEDIUM) — Only the creator is anti-MITM-verified (multi-party) — ✅ ADDRESSED (RDV-17)
+The invite commits to the **creator's** fingerprint only, so non-creator members were
+relay-attested (TOFU). **Addressed** by the Short Authentication String: both parties compute a
+code over the session id + all members' identity keys (using their own real key for their own
+entry) and compare out-of-band; any substituted member key makes the codes diverge. Opt-in
+(requires the out-of-band compare). Tests: core order-independence/divergence; e2e honest-match +
+relay-substitution divergence.
 
 ### F3 (LOW) — Fingerprint length
 Member identity is keyed by a 16-byte (128-bit) BLAKE2b fingerprint. Preimage resistance

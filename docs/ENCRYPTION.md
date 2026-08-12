@@ -130,10 +130,11 @@ cannot do so *silently*.)
 
 ## Known residuals & their tickets
 
-- **Mutual authentication is TOFU by default.** The invite proves creator→joiner (you sent it).
-  Joiner→creator is trust-on-first-use unless upgraded. → **SAS ticket**: both agents compute a
-  Short Authentication String from the combined key material and confirm it out-of-band (like
-  Signal safety numbers) to close this.
+- **Mutual authentication — SAS available (RDV-17, done).** The invite proves creator→joiner.
+  Full mutual auth (and multi-party non-creator members) is closed by the **Short Authentication
+  String**: both parties compute a code from the session id + all members' identity keys
+  (`randevu_verify_sas`) and compare it out-of-band, like Signal safety numbers. A substituted
+  key makes the codes diverge. Comparison is a human/out-of-band step, so it stays opt-in.
 - **Forward secrecy not in v1.** A leaked group key exposes that epoch's history. → ticket:
   per-message hash ratchet, later a Double Ratchet.
 - **Metadata visible to relay.** The relay sees *who* is in a session, message counts, timing,

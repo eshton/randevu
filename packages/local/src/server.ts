@@ -17,6 +17,7 @@ import {
   messageSigningBytes,
   messageId,
   chainHash,
+  computeSAS,
   didKeyFromEd25519,
   type IdentityKeyPair,
   type AgreementKeyPair,
@@ -420,6 +421,21 @@ export class RandevuLocal {
           signature: e.dto.signature,
         })),
     };
+  }
+
+  /**
+   * Compute this session's Short Authentication String (RDV-17). Compare it out-of-band
+   * with the other party; matching codes mean no member's identity key was substituted.
+   * Uses our OWN real identity key for our own entry, so even a global substitution diverges.
+   */
+  async getSAS(): Promise<{ sas: string; members: string[] }> {
+    const sessionId = this.requireSession();
+    const status = await this.relay.status(sessionId);
+    this.cache(status.members);
+    const pubs = status.members.map((m) =>
+      m.fingerprint === this.memberId ? this.identity.publicKey : hexToBytes(m.identityPub),
+    );
+    return { sas: computeSAS(sessionId, pubs), members: status.members.map((m) => m.fingerprint) };
   }
 
   private requireSession(): string {

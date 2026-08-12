@@ -34,6 +34,7 @@ export {
 } from "./message";
 export { encodeInvite, parseInvite, type Invite } from "./invite";
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
+export { computeSAS } from "./sas";
 export {
   verifyTranscript,
   type TranscriptBundle,

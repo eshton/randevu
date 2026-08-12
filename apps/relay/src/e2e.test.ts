@@ -247,4 +247,39 @@ describe("end-to-end negotiation through the blind relay", () => {
     // Bob receives a substituted key → holder-signature verification fails, loudly.
     await expect(bob.getStatus()).rejects.toThrow(/holder verification/);
   });
+
+  it("SAS matches for both honest parties (RDV-17)", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    expect((await alice.getSAS()).sas).toBe((await bob.getSAS()).sas);
+  });
+
+  it("SAS diverges when the relay substitutes a member's identity key (RDV-17)", async () => {
+    const base = inMemoryRelay();
+    let targetFp = "";
+    const fetch: FetchLike = async (url, init) => {
+      const res = await base(url, init);
+      const u = new URL(url);
+      if (u.pathname.endsWith("/status") && (init?.method ?? "GET") === "GET") {
+        const body = (await res.json()) as { members?: { fingerprint: string; identityPub: string }[] };
+        for (const m of body.members ?? []) {
+          if (m.fingerprint === targetFp) m.identityPub = bytesToHex(randomBytes(32));
+        }
+        return { ok: res.ok, status: res.status, json: async () => body };
+      }
+      return res;
+    };
+
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    targetFp = bob.memberId; // relay lies about Bob's identity key in status views
+
+    // Alice sees the fake key, Bob uses his own real one → SAS mismatch (detected out-of-band).
+    expect((await alice.getSAS()).sas).not.toBe((await bob.getSAS()).sas);
+  });
 });

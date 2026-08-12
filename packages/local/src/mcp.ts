@@ -65,6 +65,13 @@ export function createMcpServer(local: RandevuLocal): McpServer {
   );
 
   server.tool(
+    "randevu_verify_sas",
+    "Compute this session's Short Authentication String. Read it aloud / compare it with the other party out-of-band; if the codes match on both sides, no key was substituted (mutual auth).",
+    {},
+    async () => json(await local.getSAS()),
+  );
+
+  server.tool(
     "randevu_export_transcript",
     "Export a self-contained, offline-verifiable transcript of the session (members, disclosed group keys, signed messages) for non-repudiation.",
     {},
