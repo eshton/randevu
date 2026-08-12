@@ -53,7 +53,6 @@ export function decryptMessage(
 }
 
 export interface SignableEnvelope extends EnvelopeContext {
-  seq: number;
   type: MessageType;
   /** Running transcript hash of prior messages (RDV-12); null for the first message. */
   prevHash: Uint8Array | null;
@@ -61,14 +60,17 @@ export interface SignableEnvelope extends EnvelopeContext {
   ciphertext: Uint8Array;
 }
 
-/** Canonical bytes signed for a message — binds context + transcript chain + ciphertext. */
+/**
+ * Canonical bytes signed for a message — binds context + type + transcript chain +
+ * ciphertext. Deliberately excludes the relay-assigned `seq`: message ordering is
+ * authenticated by the prevHash transcript chain (RDV-12), not by the relay's cursor.
+ */
 export function messageSigningBytes(env: SignableEnvelope): Uint8Array {
   const canonical = [
     "randevu/msg/v1",
     env.sessionId,
     String(env.epoch),
     env.senderId,
-    String(env.seq),
     env.type,
     env.prevHash ? bytesToHex(env.prevHash) : "",
     bytesToHex(env.nonce),

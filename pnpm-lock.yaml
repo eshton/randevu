@@ -36,6 +36,12 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20241205.0
         version: 4.20260702.1
+      '@randevu/local':
+        specifier: workspace:*
+        version: link:../../packages/local
+      '@randevu/relay-client':
+        specifier: workspace:*
+        version: link:../../packages/relay-client
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -101,6 +107,9 @@ importers:
 
   packages/local:
     dependencies:
+      '@noble/hashes':
+        specifier: ^1.7.1
+        version: 1.8.0
       '@randevu/core':
         specifier: workspace:*
         version: link:../core

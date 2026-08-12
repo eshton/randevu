@@ -1,4 +1,5 @@
-import { Session, SessionError, type MemberInput, type StoredMessage } from "./session";
+import { Session } from "./session";
+import { dispatchSession } from "./dispatch";
 import type { KvStore } from "./store";
 
 /** Adapts Durable Object storage to the KvStore interface the session logic uses. */
@@ -27,9 +28,6 @@ class DurableKvStore implements KvStore {
  * Serialized writes give a free monotonic seq; per-session storage holds members,
  * public keys, wrapped group keys, and ciphertext. Blind: only ciphertext + public
  * keys are ever stored.
- *
- * NOTE: request-signature auth (reject non-members at the edge) is a follow-up; E2E
- * guarantees hold regardless of relay auth.
  */
 export class SessionDurableObject implements DurableObject {
   private readonly session: Session;
@@ -43,75 +41,27 @@ export class SessionDurableObject implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname;
     const sessionId = request.headers.get("X-Randevu-Session") ?? "";
+    const method = request.method;
+    const body =
+      method === "GET" || method === "HEAD"
+        ? undefined
+        : await request.json().catch(() => undefined);
 
     try {
-      // Serialize handlers against concurrent requests for a strict monotonic seq.
-      return await this.state.blockConcurrencyWhile(() =>
-        this.route(request, path, url, sessionId),
+      // Serialize handlers so `seq` stays strictly monotonic under concurrency.
+      const result = await this.state.blockConcurrencyWhile(() =>
+        dispatchSession(this.session, {
+          sessionId,
+          method,
+          path: url.pathname,
+          params: url.searchParams,
+          body,
+        }),
       );
-    } catch (err) {
-      if (err instanceof SessionError) {
-        return Response.json({ error: err.code }, { status: err.status });
-      }
+      return Response.json(result.body, { status: result.status });
+    } catch {
       return Response.json({ error: "internal_error" }, { status: 500 });
     }
-  }
-
-  private async route(
-    request: Request,
-    path: string,
-    url: URL,
-    sessionId: string,
-  ): Promise<Response> {
-    const method = request.method;
-
-    if (path === "/init" && method === "POST") {
-      const body = (await request.json()) as { maxMembers: number; creator: MemberInput };
-      return Response.json(
-        await this.session.init({ sessionId, maxMembers: body.maxMembers, creator: body.creator }),
-      );
-    }
-
-    if (path === "/join" && method === "POST") {
-      const body = (await request.json()) as { joinToken: string; member: MemberInput };
-      return Response.json(await this.session.join(body));
-    }
-
-    if (path === "/members" && method === "GET") {
-      return Response.json({ members: await this.session.members() });
-    }
-
-    if (path === "/messages" && method === "POST") {
-      const body = (await request.json()) as Omit<StoredMessage, "seq">;
-      return Response.json(await this.session.postMessage(body));
-    }
-
-    if (path === "/messages" && method === "GET") {
-      const after = Number(url.searchParams.get("after") ?? "0");
-      return Response.json(await this.session.getMessages(after));
-    }
-
-    if (path === "/keys" && method === "POST") {
-      const body = (await request.json()) as {
-        senderId: string;
-        epoch: number;
-        wraps: { recipientId: string; wrappedKey: string }[];
-      };
-      return Response.json(await this.session.postKeys(body));
-    }
-
-    if (path === "/keys" && method === "GET") {
-      const epoch = Number(url.searchParams.get("epoch") ?? "0");
-      const member = url.searchParams.get("member") ?? "";
-      return Response.json(await this.session.getKey(epoch, member));
-    }
-
-    if (path === "/status" && method === "GET") {
-      return Response.json(await this.session.status());
-    }
-
-    return Response.json({ error: "not_found" }, { status: 404 });
   }
 }

@@ -77,7 +77,7 @@ describe("message signing (non-repudiation)", () => {
 
   function envelope(): SignableEnvelope {
     const enc = encryptMessage(gk, ctx, "I accept these terms");
-    return { ...ctx, seq: 1, type: "accept", prevHash: null, nonce: enc.nonce, ciphertext: enc.ciphertext };
+    return { ...ctx, type: "accept", prevHash: null, nonce: enc.nonce, ciphertext: enc.ciphertext };
   }
 
   it("verifies a signed envelope and rejects a tampered one", () => {
@@ -86,7 +86,7 @@ describe("message signing (non-repudiation)", () => {
     const sig = signMessage(env, id.privateKey);
     expect(verifyMessage(env, sig, id.publicKey)).toBe(true);
 
-    const tampered: SignableEnvelope = { ...env, seq: 2 };
+    const tampered: SignableEnvelope = { ...env, type: "reject" };
     expect(verifyMessage(tampered, sig, id.publicKey)).toBe(false);
   });
 
