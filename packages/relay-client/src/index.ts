@@ -1,4 +1,7 @@
-import { VERSION } from "@randevu/core";
+import { VERSION, requestCanonical } from "@randevu/core";
+
+/** Signs a canonical request descriptor; returns the member id + signature. Keys stay in the caller. */
+export type RequestSigner = (canonical: string) => { member: string; signature: string };
 
 /** Minimal fetch shape the client needs — global fetch satisfies it, and it's trivial to fake. */
 export type FetchLike = (
@@ -10,6 +13,8 @@ export interface RelayClientOptions {
   /** Base URL of the Randevu Relay. */
   baseUrl: string;
   fetch?: FetchLike;
+  /** Optional per-request signer (RDV-32). The client never holds private keys itself. */
+  signer?: RequestSigner;
 }
 
 /** A member's public key material — opaque to the relay. */
@@ -50,10 +55,12 @@ export class RelayError extends Error {
 export class RelayClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly signer?: RequestSigner;
 
   constructor(options: RelayClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.fetchImpl = options.fetch ?? (globalThis.fetch as unknown as FetchLike);
+    this.signer = options.signer;
   }
 
   get endpoint(): string {
@@ -65,9 +72,19 @@ export class RelayClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["content-type"] = "application/json";
+    if (this.signer) {
+      const fullPath = path.split("?")[0]!;
+      const timestamp = String(Date.now());
+      const { member, signature } = this.signer(requestCanonical(method, fullPath, timestamp));
+      headers["x-randevu-member"] = member;
+      headers["x-randevu-timestamp"] = timestamp;
+      headers["x-randevu-auth"] = signature;
+    }
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;

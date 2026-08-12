@@ -12,16 +12,21 @@ export interface KvStore {
   list<T>(prefix: string): Promise<Map<string, T>>;
 }
 
-/** In-memory KvStore for tests. Single-threaded, like a Durable Object. */
+/**
+ * In-memory KvStore for tests. Single-threaded, like a Durable Object. Clones on
+ * read/write so stored state is isolated from callers — matching real DO storage,
+ * which serializes values (so mutating a returned object can't corrupt the store).
+ */
 export class MemoryKvStore implements KvStore {
   private readonly map = new Map<string, unknown>();
 
   async get<T>(key: string): Promise<T | undefined> {
-    return this.map.get(key) as T | undefined;
+    const value = this.map.get(key);
+    return value === undefined ? undefined : (structuredClone(value) as T);
   }
 
   async put<T>(key: string, value: T): Promise<void> {
-    this.map.set(key, value);
+    this.map.set(key, structuredClone(value));
   }
 
   async delete(key: string): Promise<void> {
@@ -31,7 +36,7 @@ export class MemoryKvStore implements KvStore {
   async list<T>(prefix: string): Promise<Map<string, T>> {
     const out = new Map<string, T>();
     for (const key of [...this.map.keys()].sort()) {
-      if (key.startsWith(prefix)) out.set(key, this.map.get(key) as T);
+      if (key.startsWith(prefix)) out.set(key, structuredClone(this.map.get(key)) as T);
     }
     return out;
   }

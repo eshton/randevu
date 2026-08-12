@@ -18,6 +18,12 @@ function inMemoryRelay(): FetchLike {
     const u = new URL(url);
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(init.body) : undefined;
+    const headers = init?.headers ?? {};
+    const auth = {
+      member: headers["x-randevu-member"],
+      timestamp: headers["x-randevu-timestamp"],
+      signature: headers["x-randevu-auth"],
+    };
     const segs = u.pathname.split("/").filter(Boolean);
 
     let result: { status: number; body: unknown };
@@ -31,6 +37,7 @@ function inMemoryRelay(): FetchLike {
         path: "/init",
         params: new URLSearchParams(),
         body,
+        ...auth,
       });
     } else if (segs[0] === "sessions" && segs.length >= 2) {
       const sessionId = segs[1]!;
@@ -39,7 +46,7 @@ function inMemoryRelay(): FetchLike {
         result = { status: 404, body: { error: "session_not_found" } };
       } else {
         const path = segs.length > 2 ? `/${segs.slice(2).join("/")}` : "/status";
-        result = await dispatchSession(session, { sessionId, method, path, params: u.searchParams, body });
+        result = await dispatchSession(session, { sessionId, method, path, params: u.searchParams, body, ...auth });
       }
     } else {
       result = { status: 404, body: { error: "not_found" } };

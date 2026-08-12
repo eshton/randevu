@@ -57,6 +57,9 @@ export class SessionDurableObject implements DurableObject {
           path: url.pathname,
           params: url.searchParams,
           body,
+          member: request.headers.get("X-Randevu-Member") ?? undefined,
+          timestamp: request.headers.get("X-Randevu-Timestamp") ?? undefined,
+          signature: request.headers.get("X-Randevu-Auth") ?? undefined,
         }),
       );
       return Response.json(result.body, { status: result.status });

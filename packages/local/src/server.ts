@@ -18,6 +18,7 @@ import {
   messageId,
   chainHash,
   computeSAS,
+  signRequest,
   didKeyFromEd25519,
   type IdentityKeyPair,
   type AgreementKeyPair,
@@ -100,7 +101,15 @@ export class RandevuLocal {
     this.identity = options.keys?.identity ?? generateIdentityKeyPair();
     this.agreement = options.keys?.agreement ?? generateAgreementKeyPair();
     this.memberId = fingerprint(this.identity.publicKey);
-    this.relay = new RelayClient({ baseUrl: options.relayUrl, fetch: options.fetch });
+    this.relay = new RelayClient({
+      baseUrl: options.relayUrl,
+      fetch: options.fetch,
+      // Sign each request with our identity key so the relay can authenticate us (RDV-32).
+      signer: (canonical) => ({
+        member: this.memberId,
+        signature: signRequest(this.identity.privateKey, canonical),
+      }),
+    });
   }
 
   /** This member's public identity as a did:key (interop). */

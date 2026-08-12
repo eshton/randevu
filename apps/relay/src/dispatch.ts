@@ -1,3 +1,5 @@
+import { hexToBytes } from "@noble/hashes/utils";
+import { requestCanonical, verifyRequest } from "@randevu/core";
 import { Session, SessionError, type MemberInput, type StoredMessage } from "./session";
 
 export interface DispatchCtx {
@@ -6,11 +8,29 @@ export interface DispatchCtx {
   path: string;
   params: URLSearchParams;
   body: unknown;
+  /** Request-auth headers (RDV-32). */
+  member?: string;
+  timestamp?: string;
+  signature?: string;
 }
 
 export interface DispatchResult {
   status: number;
   body: unknown;
+}
+
+/** Paths that require a valid member request signature (RDV-32). init/join bootstrap membership. */
+const MEMBER_ONLY = new Set(["/members", "/messages", "/keys", "/status"]);
+const MAX_SKEW_MS = 300_000;
+
+async function authenticate(session: Session, ctx: DispatchCtx): Promise<boolean> {
+  if (!ctx.member || !ctx.timestamp || !ctx.signature) return false;
+  const ts = Number(ctx.timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > MAX_SKEW_MS) return false;
+  const pub = await session.memberIdentityPub(ctx.member);
+  if (!pub) return false;
+  const canonical = requestCanonical(ctx.method, `/sessions/${ctx.sessionId}${ctx.path}`, ctx.timestamp);
+  return verifyRequest(hexToBytes(pub), canonical, ctx.signature);
 }
 
 /**
@@ -21,6 +41,9 @@ export interface DispatchResult {
 export async function dispatchSession(session: Session, ctx: DispatchCtx): Promise<DispatchResult> {
   const { sessionId, method, path, params, body } = ctx;
   try {
+    if (MEMBER_ONLY.has(path) && !(await authenticate(session, ctx))) {
+      return { status: 401, body: { error: "unauthenticated" } };
+    }
     if (path === "/init" && method === "POST") {
       const b = body as { maxMembers: number; creator: MemberInput };
       return ok(await session.init({ sessionId, maxMembers: b.maxMembers, creator: b.creator }));

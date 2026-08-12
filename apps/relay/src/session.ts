@@ -152,6 +152,12 @@ export class Session {
     return { members, epoch: meta.epoch, locked: meta.locked };
   }
 
+  /** The identity public key registered for a member (for request auth, RDV-32). */
+  async memberIdentityPub(fingerprint: string): Promise<string | undefined> {
+    const m = await this.store.get<Member>(KEY.member(fingerprint));
+    return m?.identityPub;
+  }
+
   /** RDV-4: list member public keys. */
   async members(): Promise<Member[]> {
     const map = await this.store.list<Member>("member:");

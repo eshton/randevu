@@ -70,5 +70,7 @@ ECDHE; Ed25519 = EdDSA keeps JWS/VC serialization open (RDV-29).
 
 ## Recommended follow-ups
 - **External cryptographic audit** before any production / Randevu Cloud launch.
-- Land RDV-34 (group-key authority) and RDV-32 (relay request auth) before untrusted multi-party use.
-- RDV-17 (SAS) for airtight multi-party mutual auth.
+- ~~RDV-34 (group-key authority)~~ ✅ done · ~~RDV-32 (relay request auth)~~ ✅ done ·
+  ~~RDV-17 (SAS)~~ ✅ done — the review findings are addressed.
+- Remaining hardening: RDV-33 (relay-enforced chain head for concurrency), RDV-35 (wider
+  fingerprints + length-prefixed signing), RDV-18 (forward secrecy / member removal).

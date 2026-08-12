@@ -35,6 +35,7 @@ export {
 export { encodeInvite, parseInvite, type Invite } from "./invite";
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
 export { computeSAS } from "./sas";
+export { requestCanonical, signRequest, verifyRequest } from "./reqauth";
 export {
   verifyTranscript,
   type TranscriptBundle,
