@@ -72,6 +72,13 @@ export function createMcpServer(local: RandevuLocal): McpServer {
   );
 
   server.tool(
+    "randevu_issue_credential",
+    "Issue a signed Verifiable Credential (e.g. proof you accepted specific terms) with your identity key. Verifiable via your did:key by standard VC tooling.",
+    { subject: z.record(z.string(), z.unknown()).describe("The credentialSubject claims to sign.") },
+    async ({ subject }) => json(local.issueCredential(subject)),
+  );
+
+  server.tool(
     "randevu_export_transcript",
     "Export a self-contained, offline-verifiable transcript of the session (members, disclosed group keys, signed messages) for non-repudiation.",
     {},

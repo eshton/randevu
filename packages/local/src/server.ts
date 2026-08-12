@@ -19,12 +19,14 @@ import {
   chainHash,
   computeSAS,
   signRequest,
+  signCredential,
   didKeyFromEd25519,
   type IdentityKeyPair,
   type AgreementKeyPair,
   type MessageType,
   type SignableEnvelope,
   type TranscriptBundle,
+  type VerifiableCredential,
 } from "@randevu/core";
 import { RelayClient, RelayError, type FetchLike, type MemberDTO, type MessageDTO } from "@randevu/relay-client";
 
@@ -445,6 +447,24 @@ export class RandevuLocal {
       m.fingerprint === this.memberId ? this.identity.publicKey : hexToBytes(m.identityPub),
     );
     return { sas: computeSAS(sessionId, pubs), members: status.members.map((m) => m.fingerprint) };
+  }
+
+  /**
+   * Issue a signed W3C Verifiable Credential with this member's identity key (RDV-29) —
+   * e.g. a portable proof of acceptance. Verifiable via this member's did:key by any
+   * VC-JOSE / ANP / AP2 tooling.
+   */
+  issueCredential(credentialSubject: Record<string, unknown>): VerifiableCredential {
+    return signCredential(
+      {
+        "@context": ["https://www.w3.org/2018/credentials/v1"],
+        type: ["VerifiableCredential", "RandevuAgreement"],
+        issuer: this.did,
+        credentialSubject: { ...credentialSubject, sessionId: this.sessionId ?? null },
+      },
+      this.did,
+      this.identity.privateKey,
+    );
   }
 
   private requireSession(): string {

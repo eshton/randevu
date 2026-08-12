@@ -53,7 +53,9 @@ Keep our `@noble` Ed25519 identity keys. **Additionally represent a member's pub
 DID** — `did:key` now (self-contained: it just encodes the public key, zero infra), `did:wba`
 later if ANP interop matters. Because Ed25519 = **EdDSA**, our signatures serialize directly to
 **JWS / W3C VC** with no primitive change. This buys ANP + AP2 (VC) compatibility for ~nothing.
-→ affects **RDV-2** (crypto spec) and **RDV-8** (key storage). New ticket filed.
+**Done (RDV-29):** `did:key` encode/decode + `signCredential`/`verifyCredential` (W3C VC with an
+EdDSA JsonWebSignature2020 proof, JCS-canonicalized); `RandevuLocal.issueCredential` +
+`randevu_issue_credential` let a member issue a portable, verifiable proof of acceptance.
 
 ### Seam 2 — Transport: an A2A extension that carries our encrypted envelope
 A2A has no E2E and no message signing, so we can't "be A2A" — but we can **traverse A2A while
