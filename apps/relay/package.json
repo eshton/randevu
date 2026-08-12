@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/hashes": "^1.7.1",
     "@randevu/core": "workspace:*",
     "hono": "^4.6.14"
   },
