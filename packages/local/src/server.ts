@@ -467,6 +467,55 @@ export class RandevuLocal {
     );
   }
 
+  /**
+   * Emit a concluded deal as an AP2 payment Mandate (Intent / Cart / Payment) — a signed
+   * Verifiable Credential (RDV-31). Randevu never touches funds; it produces the signed
+   * artifact a payment layer (AP2) consumes. Shape-compatible with AP2's three-mandate model;
+   * confirm field names against the current AP2 spec before production.
+   */
+  issueMandate(kind: "intent" | "cart" | "payment", subject: Record<string, unknown>): VerifiableCredential {
+    const mandateType = { intent: "IntentMandate", cart: "CartMandate", payment: "PaymentMandate" }[kind];
+    return signCredential(
+      {
+        "@context": ["https://www.w3.org/2018/credentials/v1", "https://ap2-protocol.org/context/v1"],
+        type: ["VerifiableCredential", mandateType],
+        issuer: this.did,
+        credentialSubject: { ...subject, sessionId: this.sessionId ?? null },
+      },
+      this.did,
+      this.identity.privateKey,
+    );
+  }
+
+  /**
+   * Build an x402 "402 Payment Required" descriptor for a concluded deal (RDV-31). This is
+   * the resource-server ask; the actual on-chain payment authorization is the payment rail's
+   * job. Shape-compatible with x402; confirm against the current x402 spec before production.
+   */
+  x402PaymentRequired(input: {
+    amount: string;
+    asset: string;
+    network: string;
+    payTo: string;
+    resource: string;
+    description?: string;
+  }): Record<string, unknown> {
+    return {
+      x402Version: 1,
+      accepts: [
+        {
+          scheme: "exact",
+          network: input.network,
+          maxAmountRequired: input.amount,
+          asset: input.asset,
+          payTo: input.payTo,
+          resource: input.resource,
+          description: input.description ?? "Randevu settled agreement",
+        },
+      ],
+    };
+  }
+
   private requireSession(): string {
     if (!this.sessionId) throw new Error("no active session");
     return this.sessionId;

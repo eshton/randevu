@@ -79,6 +79,16 @@ export function createMcpServer(local: RandevuLocal): McpServer {
   );
 
   server.tool(
+    "randevu_issue_mandate",
+    "Emit a concluded deal as an AP2 payment Mandate (intent | cart | payment) — a signed Verifiable Credential a payment layer can settle. Randevu never touches funds.",
+    {
+      kind: z.enum(["intent", "cart", "payment"]),
+      subject: z.record(z.string(), z.unknown()).describe("The mandate's credentialSubject (terms/cart/payment)."),
+    },
+    async ({ kind, subject }) => json(local.issueMandate(kind, subject)),
+  );
+
+  server.tool(
     "randevu_export_transcript",
     "Export a self-contained, offline-verifiable transcript of the session (members, disclosed group keys, signed messages) for non-repudiation.",
     {},

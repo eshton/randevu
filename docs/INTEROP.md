@@ -69,8 +69,10 @@ When a negotiation concludes, serialize the agreed terms as an **AP2 Cart/Intent
 signed by the member's key — we already sign; just serialize) so the deal plugs into the
 Mastercard/PayPal/Coinbase rails. For crypto-native micro-settlement, produce an **x402 payment
 authorization** for a facilitator to settle in USDC. **Randevu never touches funds** — it produces
-the signed artifact a payment layer consumes. → shapes **RDV-14/15** (agreement types +
-transcript should output AP2-compatible signed objects). New ticket filed.
+the signed artifact a payment layer consumes. **Done (RDV-31):** `RandevuLocal.issueMandate`
+(intent/cart/payment → signed VC, AP2 three-mandate shape) + `x402PaymentRequired` (402 descriptor)
++ `randevu_issue_mandate`. Shape-compatible; confirm field names against current AP2/x402 specs
+before production.
 
 ## Crypto: no change to v1 (confirmed)
 

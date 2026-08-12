@@ -18,4 +18,19 @@ describe("@randevu/local", () => {
     const vc = local.issueCredential({ accepted: "terms" });
     expect(verifyCredential(vc, ed25519FromDidKey(local.did))).toBe(true);
   });
+
+  it("emits an AP2 cart mandate as a verifiable credential (RDV-31)", () => {
+    const local = new RandevuLocal({ relayUrl: "https://relay.example.com" });
+    const vc = local.issueMandate("cart", { items: [{ sku: "A", price: "100" }], total: "100" });
+    expect(vc["type"] as string[]).toContain("CartMandate");
+    expect(verifyCredential(vc, ed25519FromDidKey(local.did))).toBe(true);
+  });
+
+  it("builds an x402 payment-required descriptor (RDV-31)", () => {
+    const local = new RandevuLocal({ relayUrl: "https://relay.example.com" });
+    const req = local.x402PaymentRequired({ amount: "100", asset: "USDC", network: "base", payTo: "0xabc", resource: "/deal/1" });
+    const accepts = req["accepts"] as Array<{ maxAmountRequired: string; asset: string }>;
+    expect(accepts[0]!.maxAmountRequired).toBe("100");
+    expect(accepts[0]!.asset).toBe("USDC");
+  });
 });
