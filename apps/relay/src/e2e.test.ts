@@ -118,4 +118,23 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.some((payload) => payload.includes(secret))).toBe(false);
   });
+
+  it("converges keys hands-off via status polling (MCP-style flow)", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+
+    // No manual establish/sync — polling status converges the shared key.
+    expect((await bob.getStatus()).hasKey).toBe(false); // creator hasn't posted the epoch key yet
+    expect((await alice.getStatus()).hasKey).toBe(true); // creator posts on first status
+    expect((await bob.getStatus()).hasKey).toBe(true); // member now unwraps it
+
+    await alice.send("Deal?", "offer");
+    const inbox = await bob.receive();
+    expect(inbox[0]!.body).toBe("Deal?");
+    expect(inbox[0]!.verified).toBe(true);
+  });
 });

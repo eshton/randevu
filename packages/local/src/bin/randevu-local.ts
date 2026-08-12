@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-import { RandevuLocal, LOCAL_VERSION } from "../index";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { RandevuLocal } from "../server";
+import { createMcpServer } from "../mcp";
+import { LOCAL_VERSION } from "../version";
 
 const relayUrl = process.env.RANDEVU_RELAY_URL ?? "https://relay.randevu.dev";
 const local = new RandevuLocal({ relayUrl });
+const server = createMcpServer(local);
 
-// TODO(RDV-13): connect a stdio transport (@modelcontextprotocol/sdk) and expose
-// the tools in docs/MCP-API.md over RandevuLocal's methods. For now this is a
-// scaffold entrypoint that prints the local identity.
+const transport = new StdioServerTransport();
+await server.connect(transport);
+
 process.stderr.write(
-  `[randevu-local ${LOCAL_VERSION}] member ${local.memberId} (${local.did}), relay ${relayUrl}. MCP wiring pending (RDV-13).\n`,
+  `[randevu-local ${LOCAL_VERSION}] MCP server on stdio — member ${local.memberId} (${local.did}), relay ${relayUrl}\n`,
 );

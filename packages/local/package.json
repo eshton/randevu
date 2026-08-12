@@ -24,9 +24,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
     "@noble/hashes": "^1.7.1",
     "@randevu/core": "workspace:*",
-    "@randevu/relay-client": "workspace:*"
+    "@randevu/relay-client": "workspace:*",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

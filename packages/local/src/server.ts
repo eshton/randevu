@@ -18,7 +18,7 @@ import {
   type MessageType,
   type SignableEnvelope,
 } from "@randevu/core";
-import { RelayClient, type FetchLike, type MemberDTO } from "@randevu/relay-client";
+import { RelayClient, RelayError, type FetchLike, type MemberDTO } from "@randevu/relay-client";
 
 export interface RandevuLocalOptions {
   relayUrl: string;
@@ -47,7 +47,9 @@ export class RandevuLocal {
 
   sessionId?: string;
   epoch = 0;
+  private role?: "creator" | "member";
   private groupKey?: Uint8Array;
+  private establishedEpoch = -1;
   private cursor = 0;
   private readonly membersById = new Map<string, MemberDTO>();
 
@@ -76,6 +78,7 @@ export class RandevuLocal {
   async createSession(maxMembers: number): Promise<{ sessionId: string; invite: string }> {
     const res = await this.relay.createSession({ maxMembers, creator: this.selfDTO() });
     this.sessionId = res.sessionId;
+    this.role = "creator";
     this.cache([this.selfDTO()]);
     const invite = encodeInvite({
       sessionId: res.sessionId,
@@ -89,6 +92,7 @@ export class RandevuLocal {
   async joinSession(invite: string): Promise<void> {
     const parsed = parseInvite(invite);
     this.sessionId = parsed.sessionId;
+    this.role = "member";
     const res = await this.relay.joinSession(parsed.sessionId, {
       joinToken: parsed.joinToken,
       member: this.selfDTO(),
@@ -118,6 +122,7 @@ export class RandevuLocal {
     }));
     await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: this.epoch, wraps });
     this.groupKey = gk;
+    this.establishedEpoch = this.epoch;
   }
 
   /** Member path: fetch and unwrap this member's group key for the current epoch. */
@@ -130,10 +135,74 @@ export class RandevuLocal {
     this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
   }
 
+  /**
+   * Idempotently converge the group key for the current epoch. The creator
+   * (re)generates and posts the key when membership changes; a member fetches +
+   * unwraps it, tolerating a not-yet-posted key. Called automatically by
+   * send/receive/getStatus so the MCP flow needs no explicit key step.
+   */
+  async ensureKeys(): Promise<boolean> {
+    const sessionId = this.requireSession();
+    const status = await this.relay.status(sessionId);
+    this.cache(status.members);
+
+    if (this.role === "creator") {
+      if (!this.groupKey || status.epoch !== this.establishedEpoch) {
+        this.epoch = status.epoch;
+        const gk = generateGroupKey();
+        const wraps = status.members.map((m) => ({
+          recipientId: m.fingerprint,
+          wrappedKey: bytesToHex(wrapGroupKey(gk, hexToBytes(m.kxPub))),
+        }));
+        await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: status.epoch, wraps });
+        this.groupKey = gk;
+        this.establishedEpoch = status.epoch;
+      }
+      return true;
+    }
+
+    if (!this.groupKey || status.epoch !== this.epoch) {
+      try {
+        const { wrappedKey } = await this.relay.getKey(sessionId, status.epoch, this.memberId);
+        this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
+        this.epoch = status.epoch;
+      } catch (err) {
+        if (err instanceof RelayError && err.status === 404) return false; // key not posted yet
+        throw err;
+      }
+    }
+    return this.groupKey !== undefined;
+  }
+
+  /** Session status for the agent; converges the group key as a side effect. */
+  async getStatus(): Promise<{
+    sessionId: string;
+    memberId: string;
+    role: "creator" | "member" | "unknown";
+    locked: boolean;
+    epoch: number;
+    members: string[];
+    hasKey: boolean;
+  }> {
+    const sessionId = this.requireSession();
+    const hasKey = await this.ensureKeys();
+    const status = await this.relay.status(sessionId);
+    return {
+      sessionId,
+      memberId: this.memberId,
+      role: this.role ?? "unknown",
+      locked: status.locked,
+      epoch: status.epoch,
+      members: status.members.map((m) => m.fingerprint),
+      hasKey,
+    };
+  }
+
   /** Encrypt + sign a message and post it. Returns the relay-assigned seq. */
   async send(body: string, type: MessageType = "message"): Promise<number> {
     const sessionId = this.requireSession();
-    if (!this.groupKey) throw new Error("no group key — call establishGroupKey/syncGroupKey first");
+    await this.ensureKeys();
+    if (!this.groupKey) throw new Error("group key not ready — the other party may not have joined yet");
     const ctx = { sessionId, epoch: this.epoch, senderId: this.memberId };
     const enc = encryptMessage(this.groupKey, ctx, body);
     const env: SignableEnvelope = { ...ctx, type, prevHash: null, nonce: enc.nonce, ciphertext: enc.ciphertext };
@@ -153,7 +222,8 @@ export class RandevuLocal {
   /** Fetch new messages since the cursor, verify every signature, decrypt verified ones. */
   async receive(): Promise<ReceivedMessage[]> {
     const sessionId = this.requireSession();
-    if (!this.groupKey) throw new Error("no group key");
+    await this.ensureKeys();
+    if (!this.groupKey) return [];
     const { messages, cursor } = await this.relay.getMessages(sessionId, this.cursor);
     this.cursor = cursor;
 
