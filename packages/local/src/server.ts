@@ -46,6 +46,8 @@ interface LogEntry {
 export interface RandevuLocalOptions {
   relayUrl: string;
   fetch?: FetchLike;
+  /** Persisted identity + agreement keypairs (e.g. from a keystore). Generated fresh if omitted. */
+  keys?: { identity: IdentityKeyPair; agreement: AgreementKeyPair };
 }
 
 export interface ReceivedMessage {
@@ -63,9 +65,9 @@ export interface ReceivedMessage {
  * @randevu/relay-client. The MCP stdio surface (RDV-13) wraps these methods.
  */
 export class RandevuLocal {
-  private readonly identity: IdentityKeyPair = generateIdentityKeyPair();
-  private readonly agreement: AgreementKeyPair = generateAgreementKeyPair();
-  readonly memberId: string = fingerprint(this.identity.publicKey);
+  private readonly identity: IdentityKeyPair;
+  private readonly agreement: AgreementKeyPair;
+  readonly memberId: string;
   private readonly relay: RelayClient;
 
   sessionId?: string;
@@ -85,6 +87,9 @@ export class RandevuLocal {
   private readonly membersById = new Map<string, MemberDTO>();
 
   constructor(options: RandevuLocalOptions) {
+    this.identity = options.keys?.identity ?? generateIdentityKeyPair();
+    this.agreement = options.keys?.agreement ?? generateAgreementKeyPair();
+    this.memberId = fingerprint(this.identity.publicKey);
     this.relay = new RelayClient({ baseUrl: options.relayUrl, fetch: options.fetch });
   }
 

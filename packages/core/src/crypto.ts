@@ -37,6 +37,16 @@ export function generateAgreementKeyPair(): AgreementKeyPair {
   return { privateKey, publicKey };
 }
 
+/** Reconstruct an Ed25519 identity keypair from its stored private key. */
+export function identityKeyPairFromPrivate(privateKey: Uint8Array): IdentityKeyPair {
+  return { privateKey, publicKey: ed25519.getPublicKey(privateKey) };
+}
+
+/** Reconstruct an X25519 agreement keypair from its stored private key. */
+export function agreementKeyPairFromPrivate(privateKey: Uint8Array): AgreementKeyPair {
+  return { privateKey, publicKey: x25519.getPublicKey(privateKey) };
+}
+
 /** Sign a message with an Ed25519 identity private key. */
 export function sign(message: Uint8Array, privateKey: Uint8Array): Uint8Array {
   return ed25519.sign(message, privateKey);

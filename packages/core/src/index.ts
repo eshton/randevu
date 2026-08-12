@@ -2,6 +2,8 @@ export { VERSION } from "./version";
 export {
   generateIdentityKeyPair,
   generateAgreementKeyPair,
+  identityKeyPairFromPrivate,
+  agreementKeyPairFromPrivate,
   sign,
   verify,
   fingerprint,
