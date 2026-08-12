@@ -4,6 +4,7 @@ import { Session } from "./session";
 import { MemoryKvStore } from "./store";
 import { dispatchSession } from "./dispatch";
 import { RandevuLocal } from "@randevu/local";
+import { verifyTranscript } from "@randevu/core";
 import type { FetchLike } from "@randevu/relay-client";
 
 /**
@@ -165,5 +166,26 @@ describe("end-to-end negotiation through the blind relay", () => {
     const inbox = await bob.receive();
     // Reordered delivery breaks the transcript chain → flagged unverified.
     expect(inbox.some((m) => !m.verified)).toBe(true);
+  });
+
+  it("exports a transcript that verifies offline (RDV-15)", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.getStatus();
+    await bob.getStatus();
+
+    await alice.send("Offer 100", "offer");
+    await bob.send("Accept", "accept");
+
+    const bundle = await alice.exportTranscript();
+    const verdict = verifyTranscript(bundle); // pure, no network, no private keys
+
+    expect(verdict.valid).toBe(true);
+    expect(verdict.membersValid).toBe(true);
+    expect(verdict.messages.map((m) => m.body)).toEqual(["Offer 100", "Accept"]);
+    expect(verdict.messages.map((m) => m.senderId)).toEqual([alice.memberId, bob.memberId]);
   });
 });

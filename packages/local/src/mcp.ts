@@ -62,9 +62,9 @@ export function createMcpServer(local: RandevuLocal): McpServer {
 
   server.tool(
     "randevu_export_transcript",
-    "Export a verifiable transcript of the session for non-repudiation.",
+    "Export a self-contained, offline-verifiable transcript of the session (members, disclosed group keys, signed messages) for non-repudiation.",
     {},
-    async () => json({ status: "not_implemented", ticket: "RDV-15" }),
+    async () => json(await local.exportTranscript()),
   );
 
   return server;

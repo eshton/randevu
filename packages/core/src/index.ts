@@ -24,3 +24,11 @@ export {
 } from "./message";
 export { encodeInvite, parseInvite, type Invite } from "./invite";
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
+export {
+  verifyTranscript,
+  type TranscriptBundle,
+  type TranscriptMember,
+  type TranscriptMessageEntry,
+  type TranscriptVerification,
+  type VerifiedTranscriptMessage,
+} from "./transcript";

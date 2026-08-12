@@ -14,7 +14,8 @@
     }
   },
   "bin": {
-    "randevu-local": "./dist/bin/randevu-local.js"
+    "randevu-local": "./dist/bin/randevu-local.js",
+    "randevu-verify": "./dist/bin/randevu-verify.js"
   },
   "files": ["dist"],
   "scripts": {

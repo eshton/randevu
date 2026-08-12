@@ -19,8 +19,9 @@ import {
   type AgreementKeyPair,
   type MessageType,
   type SignableEnvelope,
+  type TranscriptBundle,
 } from "@randevu/core";
-import { RelayClient, RelayError, type FetchLike, type MemberDTO } from "@randevu/relay-client";
+import { RelayClient, RelayError, type FetchLike, type MemberDTO, type MessageDTO } from "@randevu/relay-client";
 
 /** Nullable byte-array equality (both null counts as equal). */
 function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -38,6 +39,8 @@ interface LogEntry {
   verified: boolean;
   chainOk: boolean;
   body: string;
+  /** Raw wire message, retained for transcript export (RDV-15). */
+  dto: MessageDTO;
 }
 
 export interface RandevuLocalOptions {
@@ -69,6 +72,8 @@ export class RandevuLocal {
   epoch = 0;
   private role?: "creator" | "member";
   private groupKey?: Uint8Array;
+  /** All group keys this member has held, by epoch — disclosed in an exported transcript. */
+  private readonly groupKeys = new Map<number, Uint8Array>();
   private establishedEpoch = -1;
   /** Running transcript hash folded over the seq-ordered log (RDV-12). */
   private head: Uint8Array | null = null;
@@ -148,6 +153,7 @@ export class RandevuLocal {
     }));
     await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: this.epoch, wraps });
     this.groupKey = gk;
+    this.groupKeys.set(this.epoch, gk);
     this.establishedEpoch = this.epoch;
   }
 
@@ -159,6 +165,7 @@ export class RandevuLocal {
     this.cache(status.members);
     const { wrappedKey } = await this.relay.getKey(sessionId, this.epoch, this.memberId);
     this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
+    this.groupKeys.set(this.epoch, this.groupKey);
   }
 
   /**
@@ -182,6 +189,7 @@ export class RandevuLocal {
         }));
         await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: status.epoch, wraps });
         this.groupKey = gk;
+        this.groupKeys.set(status.epoch, gk);
         this.establishedEpoch = status.epoch;
       }
       return true;
@@ -191,6 +199,7 @@ export class RandevuLocal {
       try {
         const { wrappedKey } = await this.relay.getKey(sessionId, status.epoch, this.memberId);
         this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
+        this.groupKeys.set(status.epoch, this.groupKey);
         this.epoch = status.epoch;
       } catch (err) {
         if (err instanceof RelayError && err.status === 404) return false; // key not posted yet
@@ -254,7 +263,7 @@ export class RandevuLocal {
       if (verified && m.senderId !== this.memberId && this.groupKey) {
         body = decryptMessage(this.groupKey, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
       }
-      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body });
+      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body, dto: m });
       this.fetchedSeq = Math.max(this.fetchedSeq, m.seq);
     }
   }
@@ -308,6 +317,38 @@ export class RandevuLocal {
       });
     }
     return out;
+  }
+
+  /**
+   * Export a self-contained, verifiable transcript (RDV-15). Includes members,
+   * the group keys this member held (disclosed for adjudication), and every signed
+   * message. Verify offline with `verifyTranscript` from @randevu/core.
+   */
+  async exportTranscript(): Promise<TranscriptBundle> {
+    const sessionId = this.requireSession();
+    await this.pull();
+    return {
+      version: "randevu-transcript/v1",
+      sessionId,
+      members: [...this.membersById.values()].map((m) => ({
+        fingerprint: m.fingerprint,
+        did: didKeyFromEd25519(hexToBytes(m.identityPub)),
+        identityPub: m.identityPub,
+      })),
+      groupKeys: [...this.groupKeys.entries()].map(([epoch, key]) => ({ epoch, key: bytesToHex(key) })),
+      messages: [...this.log]
+        .sort((a, b) => a.seq - b.seq)
+        .map((e) => ({
+          seq: e.dto.seq,
+          epoch: e.dto.epoch,
+          senderId: e.dto.senderId,
+          type: e.dto.type as MessageType,
+          nonce: e.dto.nonce,
+          ciphertext: e.dto.ciphertext,
+          prevHash: e.dto.prevHash,
+          signature: e.dto.signature,
+        })),
+    };
   }
 
   private requireSession(): string {
