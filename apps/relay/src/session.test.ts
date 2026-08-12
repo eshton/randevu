@@ -110,19 +110,37 @@ describe("Messages (RDV-5/7)", () => {
 });
 
 describe("Group key storage (RDV-10 support)", () => {
-  it("stores wrapped keys per member and serves them back", async () => {
+  it("stores wrapped keys (creator only) and serves them with the signed commitment", async () => {
     const { s, joinToken } = await initedSession(3);
     await s.join({ joinToken, member: member("bbbb") });
     await s.postKeys({
       senderId: "aaaa",
       epoch: 1,
+      keyCommitment: "commit",
+      signature: "sig",
       wraps: [
         { recipientId: "aaaa", wrappedKey: "wrapped_a" },
         { recipientId: "bbbb", wrappedKey: "wrapped_b" },
       ],
     });
-    expect((await s.getKey(1, "bbbb")).wrappedKey).toBe("wrapped_b");
+    const key = await s.getKey(1, "bbbb");
+    expect(key.wrappedKey).toBe("wrapped_b");
+    expect(key.commitment).toBe("commit");
     await expect(s.getKey(1, "zzzz")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("rejects group-key posts from a non-creator (RDV-34)", async () => {
+    const { s, joinToken } = await initedSession(3);
+    await s.join({ joinToken, member: member("bbbb") });
+    await expect(
+      s.postKeys({
+        senderId: "bbbb",
+        epoch: 1,
+        keyCommitment: "c",
+        signature: "sig",
+        wraps: [{ recipientId: "bbbb", wrappedKey: "x" }],
+      }),
+    ).rejects.toMatchObject({ status: 403 });
   });
 });
 

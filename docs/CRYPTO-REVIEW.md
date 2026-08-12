@@ -26,12 +26,15 @@ keystore. **Not a substitute for an external audit** before production — recom
 
 ## Findings
 
-### F1 (MEDIUM) — Group-key authority not enforced
-`postKeys` accepts wrapped keys from **any** member. A malicious member could overwrite an
-epoch's wrapped keys, causing decryption failures (DoS/confusion). It cannot forge content
-(messages are signed), but it can disrupt an epoch. → **RDV-34**: bind the group key to the
-epoch's designated key-holder (creator/holder), or namespace `gkey` by poster + have members
-pick the holder's copy, or sign the wrapped-key set.
+### F1 (was MEDIUM → HIGH) — Group-key distribution unauthenticated — ✅ FIXED (RDV-34)
+Originally scoped as a member DoS (any member could overwrite an epoch's wrapped keys). On
+review it was worse: because member X25519 pubkeys are public, a **malicious relay** could seal
+its **own** group key to each member and read all traffic — a confidentiality break, not just DoS.
+**Fixed:** the key-holder (creator) now signs a commitment to the group key bound to
+`(sessionId, epoch)`; the relay accepts `postKeys` only from the creator; members verify the
+unwrapped key against the holder's signed commitment using the holder's pinned identity key.
+Neither another member nor the relay can substitute the key without a forgery. Covered by tests
+(core holder-signature; e2e relay-substitution rejected).
 
 ### F2 (MEDIUM) — Only the creator is anti-MITM-verified (multi-party)
 The invite commits to the **creator's** fingerprint only. In a 3+-party session, non-creator

@@ -11,7 +11,14 @@ export {
   type AgreementKeyPair,
 } from "./crypto";
 export { sealTo, openSealed } from "./sealedbox";
-export { generateGroupKey, wrapGroupKey, unwrapGroupKey } from "./groupkey";
+export {
+  generateGroupKey,
+  wrapGroupKey,
+  unwrapGroupKey,
+  groupKeyCommitment,
+  signGroupKey,
+  verifyGroupKey,
+} from "./groupkey";
 export {
   encryptMessage,
   decryptMessage,

@@ -8,6 +8,8 @@ import {
   generateGroupKey,
   wrapGroupKey,
   unwrapGroupKey,
+  signGroupKey,
+  verifyGroupKey,
   encryptMessage,
   decryptMessage,
   signMessage,
@@ -159,11 +161,18 @@ export class RandevuLocal {
     this.cache(status.members);
 
     const gk = generateGroupKey();
+    const { commitment, signature } = signGroupKey(sessionId, this.epoch, gk, this.identity.privateKey);
     const wraps = status.members.map((m) => ({
       recipientId: m.fingerprint,
       wrappedKey: bytesToHex(wrapGroupKey(gk, hexToBytes(m.kxPub))),
     }));
-    await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: this.epoch, wraps });
+    await this.relay.postKeys(sessionId, {
+      senderId: this.memberId,
+      epoch: this.epoch,
+      keyCommitment: commitment,
+      signature,
+      wraps,
+    });
     this.groupKey = gk;
     this.groupKeys.set(this.epoch, gk);
     this.establishedEpoch = this.epoch;
@@ -175,9 +184,14 @@ export class RandevuLocal {
     const status = await this.relay.status(sessionId);
     this.epoch = status.epoch;
     this.cache(status.members);
-    const { wrappedKey } = await this.relay.getKey(sessionId, this.epoch, this.memberId);
-    this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
-    this.groupKeys.set(this.epoch, this.groupKey);
+    const { wrappedKey, commitment, signature } = await this.relay.getKey(sessionId, this.epoch, this.memberId);
+    const gk = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
+    const holder = this.membersById.get(status.creatorId);
+    if (!holder || !verifyGroupKey(sessionId, this.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
+      throw new Error("group key failed holder verification — possible relay/member substitution");
+    }
+    this.groupKey = gk;
+    this.groupKeys.set(this.epoch, gk);
   }
 
   /**
@@ -195,11 +209,18 @@ export class RandevuLocal {
       if (!this.groupKey || status.epoch !== this.establishedEpoch) {
         this.epoch = status.epoch;
         const gk = generateGroupKey();
+        const { commitment, signature } = signGroupKey(sessionId, status.epoch, gk, this.identity.privateKey);
         const wraps = status.members.map((m) => ({
           recipientId: m.fingerprint,
           wrappedKey: bytesToHex(wrapGroupKey(gk, hexToBytes(m.kxPub))),
         }));
-        await this.relay.postKeys(sessionId, { senderId: this.memberId, epoch: status.epoch, wraps });
+        await this.relay.postKeys(sessionId, {
+          senderId: this.memberId,
+          epoch: status.epoch,
+          keyCommitment: commitment,
+          signature,
+          wraps,
+        });
         this.groupKey = gk;
         this.groupKeys.set(status.epoch, gk);
         this.establishedEpoch = status.epoch;
@@ -209,9 +230,14 @@ export class RandevuLocal {
 
     if (!this.groupKey || status.epoch !== this.epoch) {
       try {
-        const { wrappedKey } = await this.relay.getKey(sessionId, status.epoch, this.memberId);
-        this.groupKey = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
-        this.groupKeys.set(status.epoch, this.groupKey);
+        const { wrappedKey, commitment, signature } = await this.relay.getKey(sessionId, status.epoch, this.memberId);
+        const gk = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
+        const holder = this.membersById.get(status.creatorId);
+        if (!holder || !verifyGroupKey(sessionId, status.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
+          throw new Error("group key failed holder verification — possible relay/member substitution");
+        }
+        this.groupKey = gk;
+        this.groupKeys.set(status.epoch, gk);
         this.epoch = status.epoch;
       } catch (err) {
         if (err instanceof RelayError && err.status === 404) return false; // key not posted yet

@@ -76,6 +76,10 @@ Randevu supports 2..N members, so it does **not** rely on a single pairwise ECDH
   wrapped copies to the relay (`group_keys` table).
 - Each member unwraps `GK` locally with their X25519 private key. The relay only ever holds
   ciphertext-wrapped copies — **blind**. ✅
+- The key-holder **signs a commitment** to `GK` bound to `(sessionId, epoch)`; the relay accepts
+  key posts only from the holder, and members verify the unwrapped `GK` against that signature
+  using the holder's pinned identity key. This stops a malicious member **or the relay** from
+  substituting the group key (RDV-34). ✅
 - **Membership change** → bump epoch, generate a fresh `GK`, rewrap to the new member set.
   (Removing a member means they cannot read messages from the new epoch forward.)
 

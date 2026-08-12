@@ -8,6 +8,8 @@ import {
   generateGroupKey,
   wrapGroupKey,
   unwrapGroupKey,
+  signGroupKey,
+  verifyGroupKey,
   encryptMessage,
   decryptMessage,
   signMessage,
@@ -47,6 +49,22 @@ describe("group key wrapping (multi-party)", () => {
       const wrapped = wrapGroupKey(gk, m.publicKey);
       expect(unwrapGroupKey(wrapped, m)).toEqual(gk);
     }
+  });
+});
+
+describe("group key holder signature (RDV-34)", () => {
+  it("verifies a holder-signed group key and rejects substitution", () => {
+    const holder = generateIdentityKeyPair();
+    const gk = generateGroupKey();
+    const { commitment, signature } = signGroupKey("rdv_x", 1, gk, holder.privateKey);
+
+    expect(verifyGroupKey("rdv_x", 1, gk, commitment, signature, holder.publicKey)).toBe(true);
+    // a different key with the holder's commitment/signature (relay substitution attempt)
+    expect(verifyGroupKey("rdv_x", 1, generateGroupKey(), commitment, signature, holder.publicKey)).toBe(false);
+    // a different (imposter) signer
+    expect(verifyGroupKey("rdv_x", 1, gk, commitment, signature, generateIdentityKeyPair().publicKey)).toBe(false);
+    // wrong epoch
+    expect(verifyGroupKey("rdv_x", 2, gk, commitment, signature, holder.publicKey)).toBe(false);
   });
 });
 

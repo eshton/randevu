@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { randomBytes, bytesToHex } from "@noble/hashes/utils";
+import { randomBytes, bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { Session } from "./session";
 import { MemoryKvStore } from "./store";
 import { dispatchSession } from "./dispatch";
 import { RandevuLocal } from "@randevu/local";
-import { verifyTranscript } from "@randevu/core";
+import { verifyTranscript, generateGroupKey, wrapGroupKey } from "@randevu/core";
 import type { FetchLike } from "@randevu/relay-client";
 
 /**
@@ -211,5 +211,40 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect(verdict.agreements[0]!.accepter).toBe(bob.memberId);
     expect(verdict.agreements[0]!.acceptedSenderId).toBe(alice.memberId);
     expect(verdict.agreements[0]!.acceptedBody).toBe("Price 18000, delivery in 30 days");
+  });
+
+  it("rejects a group key substituted by a malicious relay (RDV-34)", async () => {
+    // A relay that swaps in its OWN group key (sealed to the member's real pubkey),
+    // keeping the holder's original commitment+signature (which it cannot forge).
+    const base = inMemoryRelay();
+    const kxByFingerprint = new Map<string, string>();
+    const fetch: FetchLike = async (url, init) => {
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      if (body?.creator?.kxPub) kxByFingerprint.set(body.creator.fingerprint, body.creator.kxPub);
+      if (body?.member?.kxPub) kxByFingerprint.set(body.member.fingerprint, body.member.kxPub);
+
+      const res = await base(url, init);
+      const u = new URL(url);
+      if (u.pathname.endsWith("/keys") && (init?.method ?? "GET") === "GET") {
+        const member = u.searchParams.get("member") ?? "";
+        const kx = kxByFingerprint.get(member);
+        const orig = (await res.json()) as { wrappedKey?: string };
+        if (kx && orig.wrappedKey) {
+          orig.wrappedKey = bytesToHex(wrapGroupKey(generateGroupKey(), hexToBytes(kx)));
+          return { ok: res.ok, status: res.status, json: async () => orig };
+        }
+        return { ok: res.ok, status: res.status, json: async () => orig };
+      }
+      return res;
+    };
+
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.getStatus(); // creator posts the signed group key
+
+    // Bob receives a substituted key → holder-signature verification fails, loudly.
+    await expect(bob.getStatus()).rejects.toThrow(/holder verification/);
   });
 });

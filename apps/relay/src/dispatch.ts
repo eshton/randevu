@@ -41,7 +41,13 @@ export async function dispatchSession(session: Session, ctx: DispatchCtx): Promi
     if (path === "/keys" && method === "POST") {
       return ok(
         await session.postKeys(
-          body as { senderId: string; epoch: number; wraps: { recipientId: string; wrappedKey: string }[] },
+          body as {
+            senderId: string;
+            epoch: number;
+            keyCommitment: string;
+            signature: string;
+            wraps: { recipientId: string; wrappedKey: string }[];
+          },
         ),
       );
     }

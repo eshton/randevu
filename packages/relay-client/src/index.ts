@@ -110,13 +110,19 @@ export class RelayClient {
 
   postKeys(
     sessionId: string,
-    input: { senderId: string; epoch: number; wraps: { recipientId: string; wrappedKey: string }[] },
+    input: {
+      senderId: string;
+      epoch: number;
+      keyCommitment: string;
+      signature: string;
+      wraps: { recipientId: string; wrappedKey: string }[];
+    },
   ) {
     return this.request<{ ok: true }>("POST", `/sessions/${sessionId}/keys`, input);
   }
 
   getKey(sessionId: string, epoch: number, member: string) {
-    return this.request<{ wrappedKey: string }>(
+    return this.request<{ wrappedKey: string; commitment: string; signature: string }>(
       "GET",
       `/sessions/${sessionId}/keys?epoch=${epoch}&member=${member}`,
     );
@@ -125,6 +131,7 @@ export class RelayClient {
   status(sessionId: string) {
     return this.request<{
       sessionId: string;
+      creatorId: string;
       locked: boolean;
       epoch: number;
       members: MemberDTO[];

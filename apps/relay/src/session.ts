@@ -22,6 +22,15 @@ export interface SessionMeta {
   locked: boolean;
   /** Bumped on every membership change; the current group-key generation. */
   epoch: number;
+  /** The key-holder — only this member may post group keys (RDV-34). */
+  creatorId: string;
+}
+
+/** A group key sealed to one member, plus the holder's signed commitment (RDV-34). */
+export interface StoredWrappedKey {
+  wrappedKey: string;
+  commitment: string;
+  signature: string;
 }
 
 export interface StoredMessage {
@@ -97,6 +106,7 @@ export class Session {
       maxMembers: input.maxMembers,
       locked: false,
       epoch: 0,
+      creatorId: input.creator.fingerprint,
     };
     const token = randomToken();
 
@@ -173,31 +183,39 @@ export class Session {
     return { messages, cursor };
   }
 
-  /** RDV-10 support: store group-key copies wrapped to each member for an epoch. */
+  /** RDV-10/34: store group-key copies wrapped to each member. Key-holder (creator) only. */
   async postKeys(input: {
     senderId: string;
     epoch: number;
+    keyCommitment: string;
+    signature: string;
     wraps: { recipientId: string; wrappedKey: string }[];
   }): Promise<{ ok: true }> {
-    await this.meta();
+    const meta = await this.meta();
     await this.requireMember(input.senderId);
+    if (input.senderId !== meta.creatorId) throw new SessionError(403, "not_key_holder");
     for (const w of input.wraps) {
-      await this.store.put<string>(KEY.gkey(input.epoch, w.recipientId), w.wrappedKey);
+      await this.store.put<StoredWrappedKey>(KEY.gkey(input.epoch, w.recipientId), {
+        wrappedKey: w.wrappedKey,
+        commitment: input.keyCommitment,
+        signature: input.signature,
+      });
     }
     return { ok: true };
   }
 
-  /** RDV-10 support: fetch this member's wrapped group key for an epoch. */
-  async getKey(epoch: number, memberId: string): Promise<{ wrappedKey: string }> {
+  /** RDV-10/34: fetch this member's wrapped group key + the holder's signed commitment. */
+  async getKey(epoch: number, memberId: string): Promise<StoredWrappedKey> {
     await this.meta();
-    const wrappedKey = await this.store.get<string>(KEY.gkey(epoch, memberId));
-    if (!wrappedKey) throw new SessionError(404, "key_not_found");
-    return { wrappedKey };
+    const entry = await this.store.get<StoredWrappedKey>(KEY.gkey(epoch, memberId));
+    if (!entry) throw new SessionError(404, "key_not_found");
+    return entry;
   }
 
   /** RDV: session status incl. member list, lock state, epoch, message count. */
   async status(): Promise<{
     sessionId: string;
+    creatorId: string;
     locked: boolean;
     epoch: number;
     members: Member[];
@@ -207,6 +225,7 @@ export class Session {
     const lastSeq = (await this.store.get<number>(KEY.seq)) ?? 0;
     return {
       sessionId: meta.sessionId,
+      creatorId: meta.creatorId,
       locked: meta.locked,
       epoch: meta.epoch,
       members: await this.members(),
