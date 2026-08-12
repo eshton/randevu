@@ -49,6 +49,7 @@ for the ticket backlog.
 - [docs/ENCRYPTION.md](docs/ENCRYPTION.md) — the cryptographic protocol and threat model
 - [docs/MCP-API.md](docs/MCP-API.md) — the MCP tool surface agents call
 - [docs/STACK.md](docs/STACK.md) — decided tech stack + monorepo layout
+- [docs/DEPLOY.md](docs/DEPLOY.md) — self-host the relay on your own Cloudflare account
 - [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) — reach ladder: who can use it + how far reach extends without breaking E2E
 - [docs/PRIOR-ART.md](docs/PRIOR-ART.md) — competitive landscape (A2A, ANP, Pactum, AP2/x402…) + positioning
 - [docs/INTEROP.md](docs/INTEROP.md) — interop stance vs ANP/A2A + AP2/x402 settlement seams
