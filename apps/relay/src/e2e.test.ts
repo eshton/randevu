@@ -137,4 +137,33 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect(inbox[0]!.body).toBe("Deal?");
     expect(inbox[0]!.verified).toBe(true);
   });
+
+  it("detects a reordered transcript (chain integrity, RDV-12)", async () => {
+    // A malicious relay that reverses the message list on GET /messages.
+    const base = inMemoryRelay();
+    const fetch: FetchLike = async (url, init) => {
+      const res = await base(url, init);
+      const u = new URL(url);
+      if (u.pathname.endsWith("/messages") && (init?.method ?? "GET") === "GET") {
+        const body = (await res.json()) as { messages: unknown[] };
+        if (Array.isArray(body.messages) && body.messages.length > 1) body.messages.reverse();
+        return { ok: res.ok, status: res.status, json: async () => body };
+      }
+      return res;
+    };
+
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.getStatus();
+    await bob.getStatus();
+
+    await alice.send("first", "offer");
+    await alice.send("second", "counter");
+
+    const inbox = await bob.receive();
+    // Reordered delivery breaks the transcript chain → flagged unverified.
+    expect(inbox.some((m) => !m.verified)).toBe(true);
+  });
 });

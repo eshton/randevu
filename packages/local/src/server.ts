@@ -12,6 +12,8 @@ import {
   decryptMessage,
   signMessage,
   verifyMessage,
+  messageSigningBytes,
+  chainHash,
   didKeyFromEd25519,
   type IdentityKeyPair,
   type AgreementKeyPair,
@@ -19,6 +21,24 @@ import {
   type SignableEnvelope,
 } from "@randevu/core";
 import { RelayClient, RelayError, type FetchLike, type MemberDTO } from "@randevu/relay-client";
+
+/** Nullable byte-array equality (both null counts as equal). */
+function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+interface LogEntry {
+  seq: number;
+  senderId: string;
+  type: MessageType;
+  /** Signature verified AND transcript-chain position matched. */
+  verified: boolean;
+  chainOk: boolean;
+  body: string;
+}
 
 export interface RandevuLocalOptions {
   relayUrl: string;
@@ -50,7 +70,13 @@ export class RandevuLocal {
   private role?: "creator" | "member";
   private groupKey?: Uint8Array;
   private establishedEpoch = -1;
-  private cursor = 0;
+  /** Running transcript hash folded over the seq-ordered log (RDV-12). */
+  private head: Uint8Array | null = null;
+  /** Last seq folded into `head` and cached in `log`. */
+  private fetchedSeq = 0;
+  /** Last seq delivered to the agent via receive(). */
+  private inboxSeq = 0;
+  private readonly log: LogEntry[] = [];
   private readonly membersById = new Map<string, MemberDTO>();
 
   constructor(options: RandevuLocalOptions) {
@@ -198,14 +224,56 @@ export class RandevuLocal {
     };
   }
 
-  /** Encrypt + sign a message and post it. Returns the relay-assigned seq. */
+  /**
+   * Fold newly-posted messages into the transcript head, verifying each signature
+   * and its chain position (prevHash == our head-before). Idempotent per seq. This
+   * is the transcript-integrity check (RDV-12): a relay that reorders, drops, or
+   * inserts a message breaks continuity and every participant can see it.
+   */
+  private async pull(): Promise<void> {
+    const sessionId = this.requireSession();
+    const { messages } = await this.relay.getMessages(sessionId, this.fetchedSeq);
+    for (const m of messages) {
+      const ctx = { sessionId, epoch: m.epoch, senderId: m.senderId };
+      const env: SignableEnvelope = {
+        ...ctx,
+        type: m.type as MessageType,
+        prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
+        nonce: hexToBytes(m.nonce),
+        ciphertext: hexToBytes(m.ciphertext),
+      };
+      const sender = this.membersById.get(m.senderId);
+      const sigOk = sender
+        ? verifyMessage(env, hexToBytes(m.signature), hexToBytes(sender.identityPub))
+        : false;
+      const chainOk = bytesEqualNullable(env.prevHash, this.head);
+      this.head = chainHash(this.head, messageSigningBytes(env));
+
+      const verified = sigOk && chainOk;
+      let body = "";
+      if (verified && m.senderId !== this.memberId && this.groupKey) {
+        body = decryptMessage(this.groupKey, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
+      }
+      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body });
+      this.fetchedSeq = Math.max(this.fetchedSeq, m.seq);
+    }
+  }
+
+  /** Encrypt + sign a message (chained to the current transcript head) and post it. */
   async send(body: string, type: MessageType = "message"): Promise<number> {
     const sessionId = this.requireSession();
     await this.ensureKeys();
     if (!this.groupKey) throw new Error("group key not ready — the other party may not have joined yet");
+    await this.pull(); // fold prior messages so prevHash reflects the current head
     const ctx = { sessionId, epoch: this.epoch, senderId: this.memberId };
     const enc = encryptMessage(this.groupKey, ctx, body);
-    const env: SignableEnvelope = { ...ctx, type, prevHash: null, nonce: enc.nonce, ciphertext: enc.ciphertext };
+    const env: SignableEnvelope = {
+      ...ctx,
+      type,
+      prevHash: this.head,
+      nonce: enc.nonce,
+      ciphertext: enc.ciphertext,
+    };
     const signature = signMessage(env, this.identity.privateKey);
     const { seq } = await this.relay.postMessage(sessionId, {
       epoch: this.epoch,
@@ -214,44 +282,30 @@ export class RandevuLocal {
       nonce: bytesToHex(enc.nonce),
       signature: bytesToHex(signature),
       type,
-      prevHash: null,
+      prevHash: this.head ? bytesToHex(this.head) : null,
     });
     return seq;
   }
 
-  /** Fetch new messages since the cursor, verify every signature, decrypt verified ones. */
+  /**
+   * Deliver new messages to the agent: signatures verified, transcript chain
+   * checked, verified ciphertext decrypted, own messages skipped.
+   */
   async receive(): Promise<ReceivedMessage[]> {
-    const sessionId = this.requireSession();
     await this.ensureKeys();
-    if (!this.groupKey) return [];
-    const { messages, cursor } = await this.relay.getMessages(sessionId, this.cursor);
-    this.cursor = cursor;
-
+    await this.pull();
     const out: ReceivedMessage[] = [];
-    for (const m of messages) {
-      if (m.senderId === this.memberId) continue; // don't re-consume our own messages
-      const ctx = { sessionId, epoch: m.epoch, senderId: m.senderId };
-      const sender = this.membersById.get(m.senderId);
-      const type = m.type as MessageType;
-      let verified = false;
-      let body = "";
-      if (sender) {
-        const env: SignableEnvelope = {
-          ...ctx,
-          type,
-          prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
-          nonce: hexToBytes(m.nonce),
-          ciphertext: hexToBytes(m.ciphertext),
-        };
-        verified = verifyMessage(env, hexToBytes(m.signature), hexToBytes(sender.identityPub));
-      }
-      if (verified) {
-        body = decryptMessage(this.groupKey, ctx, {
-          nonce: hexToBytes(m.nonce),
-          ciphertext: hexToBytes(m.ciphertext),
-        });
-      }
-      out.push({ seq: m.seq, senderId: m.senderId, type, body, verified });
+    for (const entry of this.log) {
+      if (entry.seq <= this.inboxSeq) continue;
+      this.inboxSeq = entry.seq;
+      if (entry.senderId === this.memberId) continue;
+      out.push({
+        seq: entry.seq,
+        senderId: entry.senderId,
+        type: entry.type,
+        body: entry.body,
+        verified: entry.verified,
+      });
     }
     return out;
   }
