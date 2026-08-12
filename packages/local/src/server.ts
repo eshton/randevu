@@ -265,8 +265,10 @@ export class RandevuLocal {
 
       const verified = sigOk && chainOk;
       let body = "";
-      if (verified && m.senderId !== this.memberId && this.groupKey) {
-        body = decryptMessage(this.groupKey, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
+      // Decrypt with the key for the message's OWN epoch (not just the current one).
+      const key = this.groupKeys.get(m.epoch) ?? this.groupKey;
+      if (verified && m.senderId !== this.memberId && key) {
+        body = decryptMessage(key, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
       }
       this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body, dto: m });
       this.fetchedSeq = Math.max(this.fetchedSeq, m.seq);

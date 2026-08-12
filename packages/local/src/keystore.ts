@@ -26,7 +26,7 @@ export interface KeystoreFile {
 }
 
 // Deliberately expensive KDF so a stolen keystore file resists offline guessing.
-const SCRYPT_PARAMS = { N: 2 ** 15, r: 8, p: 1, dkLen: 32 } as const;
+const SCRYPT_PARAMS = { N: 2 ** 16, r: 8, p: 1, dkLen: 32 } as const;
 
 function deriveKey(passphrase: string, salt: Uint8Array): Uint8Array {
   return scrypt(utf8ToBytes(passphrase), salt, SCRYPT_PARAMS);

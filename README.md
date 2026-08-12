@@ -53,6 +53,7 @@ for the ticket backlog.
 - [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) — reach ladder: who can use it + how far reach extends without breaking E2E
 - [docs/PRIOR-ART.md](docs/PRIOR-ART.md) — competitive landscape (A2A, ANP, Pactum, AP2/x402…) + positioning
 - [docs/INTEROP.md](docs/INTEROP.md) — interop stance vs ANP/A2A + AP2/x402 settlement seams
+- [docs/CRYPTO-REVIEW.md](docs/CRYPTO-REVIEW.md) — adversarial crypto review pass + findings
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phases and open questions
 
 ## Repository layout
