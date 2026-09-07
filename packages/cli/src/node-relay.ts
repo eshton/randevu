@@ -46,6 +46,15 @@ export async function startNodeRelay(port = 0, host = "127.0.0.1"): Promise<Node
 
     if (path === "/") return sendJson(res, 200, HEALTH);
 
+    // Human-facing join landing (someone clicked the https link in a browser).
+    // Served by the relay itself so it works for a self-hosted relay too — no
+    // hosted service in the loop. The invite lives in the URL fragment, which the
+    // browser never sends here, so this page only ever renders a "hand it to your
+    // agent" hint from client-side JS.
+    if (method === "GET" && (path === "/j" || path.startsWith("/j/"))) {
+      return sendHtml(res, 200, JOIN_PAGE);
+    }
+
     const body =
       method === "GET" || method === "HEAD" ? undefined : await readJson(req);
     const auth = {
@@ -125,3 +134,52 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(payload);
 }
+
+function sendHtml(res: ServerResponse, status: number, html: string): void {
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
+/** Minimal branded join landing — self-contained, styled to match randevu.dev. */
+const JOIN_PAGE = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Join a Randevu session</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+    background:#f6f2e9; color:#47402f;
+    font-family:"Hanken Grotesk",system-ui,sans-serif; line-height:1.6; padding:1.5rem; }
+  main { max-width:33rem; }
+  .seal { width:15px;height:15px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#e6a93c,#b27e23); box-shadow:0 0 0 4px rgba(224,161,47,.14); }
+  h1 { font-family:"Bricolage Grotesque",system-ui,sans-serif; font-weight:700;
+    letter-spacing:-.02em; color:#201c14; font-size:1.6rem; margin:1.1rem 0 .6rem; }
+  code { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .linkbox { display:flex; gap:.6rem; align-items:center; margin:1.2rem 0;
+    background:#fffdf7; border:1px solid #e0d8c6; border-radius:12px; padding:.7rem .8rem; }
+  .linkbox code { flex:1; font-size:.82rem; color:#1f8f86; word-break:break-all; }
+  button { flex:none; font-weight:600; font-size:.85rem; color:#1a1305; background:#e0a12f;
+    border:1px solid #b27e23; border-radius:8px; padding:.4rem .8rem; cursor:pointer; }
+  .hint { font-size:.92rem; color:#756b57; }
+  .foot { margin-top:2rem; font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.75rem; color:#9a8e77; }
+</style></head><body>
+<main>
+  <span class="seal"></span>
+  <h1>You've been invited to a Randevu session</h1>
+  <p>Randevu is end-to-end encrypted. To join, hand this link to your agent — it runs
+     <code>randevu_join_session</code> with it, checks the inviter's key, and joins.</p>
+  <div class="linkbox"><code id="link"></code><button id="copy" type="button">copy</button></div>
+  <p class="hint">Nothing on this page reaches a server: the invite lives in the part after
+     <code>#</code>, which your browser keeps to itself.</p>
+  <p class="foot">randevu · blind by construction</p>
+</main>
+<script>
+  var link = location.href;
+  document.getElementById("link").textContent = link;
+  document.getElementById("copy").addEventListener("click", function () {
+    if (navigator.clipboard) navigator.clipboard.writeText(link).catch(function () {});
+  });
+</script>
+</body></html>`;
