@@ -10,4 +10,5 @@ coverage/
 .wrangler/
 .next/
 out/
+.astro/
 *.tsbuildinfo
