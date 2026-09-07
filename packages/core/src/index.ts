@@ -32,7 +32,14 @@ export {
   type EnvelopeContext,
   type SignableEnvelope,
 } from "./message";
-export { encodeInvite, parseInvite, type Invite } from "./invite";
+export {
+  encodeInvite,
+  parseInvite,
+  encodeJoinLink,
+  parseJoinLink,
+  type Invite,
+  type JoinLink,
+} from "./invite";
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
 export { computeSAS } from "./sas";
 export { requestCanonical, signRequest, verifyRequest } from "./reqauth";

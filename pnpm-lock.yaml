@@ -42,6 +42,9 @@ importers:
       '@randevu/relay-client':
         specifier: workspace:*
         version: link:../../packages/relay-client
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.26)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -67,6 +70,37 @@ importers:
       wrangler:
         specifier: ^4.0.0
         version: 4.129.0
+
+  packages/cli:
+    dependencies:
+      '@randevu/core':
+        specifier: workspace:*
+        version: link:../core
+      '@randevu/local':
+        specifier: workspace:*
+        version: link:../local
+      '@randevu/relay':
+        specifier: workspace:*
+        version: link:../../apps/relay
+    devDependencies:
+      '@noble/hashes':
+        specifier: ^1.7.1
+        version: 1.8.0
+      '@randevu/relay-client':
+        specifier: workspace:*
+        version: link:../relay-client
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.26)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/core:
     dependencies:
