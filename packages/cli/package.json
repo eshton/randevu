@@ -1,7 +1,6 @@
 {
   "name": "@randevu/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "Randevu CLI — `randevu start` opens a session on the hosted relay; `randevu start local` self-hosts a blind relay + tunnel.",
   "license": "MIT",
@@ -17,7 +16,12 @@
   "bin": {
     "randevu": "./dist/bin/randevu.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -25,12 +29,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/hashes": "^1.7.1",
     "@randevu/core": "workspace:*",
-    "@randevu/local": "workspace:*",
-    "@randevu/relay": "workspace:*"
+    "@randevu/local": "workspace:*"
   },
   "devDependencies": {
-    "@noble/hashes": "^1.7.1",
+    "@randevu/relay": "workspace:*",
     "@randevu/relay-client": "workspace:*",
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",

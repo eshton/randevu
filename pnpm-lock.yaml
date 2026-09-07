@@ -73,19 +73,19 @@ importers:
 
   packages/cli:
     dependencies:
+      '@noble/hashes':
+        specifier: ^1.7.1
+        version: 1.8.0
       '@randevu/core':
         specifier: workspace:*
         version: link:../core
       '@randevu/local':
         specifier: workspace:*
         version: link:../local
+    devDependencies:
       '@randevu/relay':
         specifier: workspace:*
         version: link:../../apps/relay
-    devDependencies:
-      '@noble/hashes':
-        specifier: ^1.7.1
-        version: 1.8.0
       '@randevu/relay-client':
         specifier: workspace:*
         version: link:../relay-client

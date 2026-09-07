@@ -1,6 +1,6 @@
 {
   "name": "@randevu/relay-client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Typed REST client for the Randevu Relay. Ciphertext + public keys only.",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
