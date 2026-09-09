@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-06-01",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "relay.randevu.run", "custom_domain": true }],
   "observability": {
     "enabled": true
   },

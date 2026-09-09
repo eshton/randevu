@@ -5,12 +5,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-09",
   "compatibility_flags": ["nodejs_compat"],
-  // Public base URL, used to build shareable /j/<code> invite links. Update on custom domain.
+  "routes": [{ "pattern": "mcp.randevu.run", "custom_domain": true }],
+  // Public base URL, used to build shareable /j/<code> invite links.
   "vars": {
-    "PUBLIC_URL": "https://randevu-mcp.agoston-fung.workers.dev"
+    "PUBLIC_URL": "https://mcp.randevu.run",
+    "FROM_EMAIL": "invites@randevu.run"
   },
-  // Transactional email for invitations. Requires an onboarded sending domain
-  // (`wrangler email sending enable <domain>`) and FROM_EMAIL set to an address on it.
+  // Transactional email for invitations. Requires randevu.run onboarded for Email Sending.
   "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [
