@@ -40,6 +40,14 @@ export {
   type Invite,
   type JoinLink,
 } from "./invite";
+export {
+  KINDS,
+  rolesForKind,
+  roleByOrder,
+  roomContext,
+  listKinds,
+  type KindDef,
+} from "./kinds";
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
 export { computeSAS } from "./sas";
 export { requestCanonical, signRequest, verifyRequest } from "./reqauth";

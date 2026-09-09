@@ -290,3 +290,40 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect((await alice.getSAS()).sas).not.toBe((await bob.getSAS()).sas);
   });
 });
+
+describe("room layer over the blind relay", () => {
+  it("open_room / join_room set kind + role and exchange encrypted, verified messages", async () => {
+    const base = inMemoryRelay();
+    const seen: string[] = [];
+    const fetch: FetchLike = async (url, init) => {
+      if (init?.body) seen.push(init.body as string);
+      return base(url, init);
+    };
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+
+    const opened = await alice.openRoom("negotiation");
+    expect(opened.kind).toBe("negotiation");
+    expect(opened.role).toBe("buyer"); // creator takes the first role
+    expect(opened.context).toContain("role guidance:");
+
+    const joined = await bob.joinRoom(opened.invite, "negotiation");
+    expect(joined.role).toBe("seller"); // next role by join order
+    expect(joined.context).toContain("negotiation");
+
+    await alice.send("offer: 52k net-15", "offer");
+    const bobMsgs = await bob.waitForMessage(3000); // already posted → returns at once
+    expect(bobMsgs.map((m) => m.body)).toEqual(["offer: 52k net-15"]);
+    expect(bobMsgs[0]!.type).toBe("offer");
+    expect(bobMsgs[0]!.verified).toBe(true);
+
+    await bob.send("accept", "accept");
+    const aliceMsgs = await alice.waitForMessage(3000);
+    expect(aliceMsgs[0]!.body).toBe("accept");
+    expect(aliceMsgs[0]!.type).toBe("accept");
+
+    // Blind: the relay never saw the plaintext.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.some((p) => p.includes("52k net-15"))).toBe(false);
+  });
+});

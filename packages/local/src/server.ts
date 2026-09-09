@@ -21,6 +21,8 @@ import {
   signRequest,
   signCredential,
   didKeyFromEd25519,
+  roomContext,
+  roleByOrder,
   type IdentityKeyPair,
   type AgreementKeyPair,
   type MessageType,
@@ -85,6 +87,9 @@ export class RandevuLocal {
 
   sessionId?: string;
   epoch = 0;
+  /** Room kind + this member's assigned role (client-side; the relay never sees them). */
+  kind = "";
+  myRole = "";
   private role?: "creator" | "member";
   private groupKey?: Uint8Array;
   /** All group keys this member has held, by epoch — disclosed in an exported transcript. */
@@ -327,7 +332,7 @@ export class RandevuLocal {
    * `ref` binds this message to the content-id of another (e.g. an accept → its offer),
    * so acceptance of specific terms is non-repudiable.
    */
-  async send(body: string, type: MessageType = "message", ref: string | null = null): Promise<number> {
+  async send(body: string, type: string = "message", ref: string | null = null): Promise<number> {
     const sessionId = this.requireSession();
     await this.ensureKeys();
     if (!this.groupKey) throw new Error("group key not ready — the other party may not have joined yet");
@@ -336,7 +341,7 @@ export class RandevuLocal {
     const enc = encryptMessage(this.groupKey, ctx, body);
     const env: SignableEnvelope = {
       ...ctx,
-      type,
+      type: type as MessageType,
       prevHash: this.head,
       ref,
       nonce: enc.nonce,
@@ -399,6 +404,61 @@ export class RandevuLocal {
       });
     }
     return out;
+  }
+
+  // ---- Room layer: kinds/roles + turn-taking over the blind session ----
+
+  /** Open a room: create the session, set the kind + your role, return the invite + context. */
+  async openRoom(
+    kind = "",
+    role = "",
+    maxMembers = 2,
+  ): Promise<{ sessionId: string; invite: string; kind: string; role: string; context: string }> {
+    const { sessionId, invite } = await this.createSession(maxMembers);
+    this.kind = kind;
+    this.myRole = role || (kind ? roleByOrder(kind, 0) : "");
+    return { sessionId, invite, kind, role: this.myRole, context: kind ? roomContext(kind, this.myRole) : "" };
+  }
+
+  /** Join a room from an invite (verifies the creator's fingerprint), set kind + your role. */
+  async joinRoom(
+    invite: string,
+    kind = "",
+    role = "",
+  ): Promise<{ sessionId: string; kind: string; role: string; context: string; members: string[] }> {
+    await this.joinSession(invite);
+    this.kind = kind;
+    this.myRole = role || (kind ? roleByOrder(kind, 1) : "");
+    return {
+      sessionId: this.requireSession(),
+      kind,
+      role: this.myRole,
+      context: kind ? roomContext(kind, this.myRole) : "",
+      members: [...this.membersById.keys()],
+    };
+  }
+
+  /** Block (client-side poll) until a message arrives from the other party, or timeout. */
+  async waitForMessage(timeoutMs = 25000, intervalMs = 1500): Promise<ReceivedMessage[]> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const msgs = await this.receive();
+      if (msgs.length) return msgs;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return [];
+      await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)));
+    }
+  }
+
+  /** Send a message, then wait for the reply (client-side poll). */
+  async sendAndWait(
+    body: string,
+    type: string = "message",
+    timeoutMs = 45000,
+  ): Promise<{ seq: number; reply: ReceivedMessage[] }> {
+    const seq = await this.send(body, type);
+    const reply = await this.waitForMessage(timeoutMs);
+    return { seq, reply };
   }
 
   /**
