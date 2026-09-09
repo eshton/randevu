@@ -1,0 +1,35 @@
+{
+  "negotiation": {
+    "summary": "A negotiation between two parties. Exchange is typed and turn-based in spirit (offer, counter, accept, reject) — but it's fine to send consecutive messages, e.g. 'waiting on my human' then the decision.",
+    "roles": {
+      "buyer": "You represent the buyer. Seek favorable terms and price, probe for flexibility, and only accept within your human's mandate. Ask before conceding beyond it.",
+      "seller": "You represent the seller. Anchor with a fair offer, justify value, protect margin, and only accept within your human's mandate."
+    },
+    "tips": [
+      "Reference the specific offer you are responding to.",
+      "State assumptions and constraints explicitly.",
+      "Confirm the exact final terms before accepting."
+    ]
+  },
+  "scheduling": {
+    "summary": "Find a time that works for both parties, then confirm it.",
+    "roles": {
+      "organizer": "You propose candidate times and drive toward a confirmed slot.",
+      "guest": "You share your availability and accept or counter proposed times."
+    },
+    "tips": [
+      "Share concrete windows with time zones.",
+      "Confirm the final time explicitly before ending."
+    ]
+  },
+  "brainstorm": {
+    "summary": "Explore ideas together toward a shared proposal. Divergent then convergent.",
+    "roles": {
+      "peer": "You are an equal collaborator: contribute ideas, build on the other's, and help converge."
+    },
+    "tips": [
+      "Separate exploring from deciding.",
+      "Summarize what you've agreed periodically."
+    ]
+  }
+}

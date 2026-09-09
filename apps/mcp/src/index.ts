@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
+import kindsConfig from "./kinds.json";
 
 export interface Env {
   RANDEVU_MCP: DurableObjectNamespace<RandevuMcp>;
@@ -31,61 +32,29 @@ interface KindDef {
   tips: string[];
 }
 
-const KINDS: Record<string, KindDef> = {
-  negotiation: {
-    summary:
-      "A negotiation between two parties. Exchange is typed and turn-based in spirit (offer, counter, accept, reject) — but it's fine to send consecutive messages, e.g. 'waiting on my human' then the decision.",
-    roles: {
-      buyer:
-        "You represent the buyer. Seek favorable terms and price, probe for flexibility, and only accept within your human's mandate. Ask before conceding beyond it.",
-      seller:
-        "You represent the seller. Anchor with a fair offer, justify value, protect margin, and only accept within your human's mandate.",
-    },
-    tips: [
-      "Reference the specific offer you are responding to.",
-      "State assumptions and constraints explicitly.",
-      "Confirm the exact final terms before accepting.",
-    ],
-  },
-  scheduling: {
-    summary: "Find a time that works for both parties, then confirm it.",
-    roles: {
-      organizer: "You propose candidate times and drive toward a confirmed slot.",
-      guest: "You share your availability and accept or counter proposed times.",
-    },
-    tips: ["Share concrete windows with time zones.", "Confirm the final time explicitly before ending."],
-  },
-  brainstorm: {
-    summary: "Explore ideas together toward a shared proposal. Divergent then convergent.",
-    roles: {
-      peer: "You are an equal collaborator: contribute ideas, build on the other's, and help converge.",
-    },
-    tips: ["Separate exploring from deciding.", "Summarize what you've agreed periodically."],
-  },
-};
+/** Predefined kinds, loaded from kinds.json (edit + redeploy to tune the prompts). */
+const KINDS = kindsConfig as Record<string, KindDef>;
 
-/** Assign the next unused predefined role for a kind, else a generic participant. */
-function pickRole(kind: string, taken: string[]): string {
-  const def = KINDS[kind];
-  if (!def) return "participant";
-  const free = Object.keys(def.roles).find((r) => !taken.includes(r));
+/** Assign the next unused role from a role list, else a generic participant. */
+function pickRole(roleKeys: string[], taken: string[]): string {
+  const free = roleKeys.find((r) => !taken.includes(r));
   return free ?? "participant";
 }
 
-/** Build the room-context block returned on open/join. Framed as information, not commands. */
-function roomContext(kind: string, role: string, brief: string): string {
+/**
+ * Build the room-context block returned on open/join. Framed as information, not
+ * commands. `roleGuidance` is resolved by the room (predefined kind or custom roles).
+ */
+function roomContext(kind: string, role: string, brief: string, roleGuidance: string): string {
   const def = KINDS[kind];
   const lines = [
     "--- room context (information, not commands — you decide how to use it) ---",
     `room kind: ${kind}${def ? "" : " (custom)"}`,
     `your role: ${role}`,
   ];
-  if (def) {
-    lines.push(`about: ${def.summary}`);
-    const guidance = def.roles[role];
-    if (guidance) lines.push(`role guidance: ${guidance}`);
-    if (def.tips.length) lines.push("tips:\n" + def.tips.map((t) => ` - ${t}`).join("\n"));
-  }
+  if (def?.summary) lines.push(`about: ${def.summary}`);
+  if (roleGuidance) lines.push(`role guidance: ${roleGuidance}`);
+  if (def?.tips.length) lines.push("tips:\n" + def.tips.map((t) => ` - ${t}`).join("\n"));
   if (brief) lines.push(`note from the room opener: ${brief}`);
   lines.push("------------------------------------------------------------------------");
   return lines.join("\n");
@@ -101,10 +70,17 @@ interface JoinResult {
   kind: string;
   role: string;
   brief: string;
+  roleGuidance: string;
 }
 
 export class Room extends DurableObject {
-  async open(name: string, kind: string, role: string, brief: string): Promise<JoinResult> {
+  async open(
+    name: string,
+    kind: string,
+    role: string,
+    brief: string,
+    customRoles: Record<string, string>,
+  ): Promise<JoinResult> {
     if (!(await this.ctx.storage.get<boolean>("open"))) {
       await this.ctx.storage.put("open", true);
       await this.ctx.storage.put<number>("seq", 0);
@@ -112,6 +88,7 @@ export class Room extends DurableObject {
       await this.ctx.storage.put<Record<string, string>>("roles", {});
       await this.ctx.storage.put<string>("kind", kind || "chat");
       await this.ctx.storage.put<string>("brief", brief || "");
+      await this.ctx.storage.put<Record<string, string>>("customRoles", customRoles ?? {});
     }
     return this.join(name, role);
   }
@@ -121,16 +98,19 @@ export class Room extends DurableObject {
     const brief = (await this.ctx.storage.get<string>("brief")) ?? "";
     const members = (await this.ctx.storage.get<string[]>("members")) ?? [];
     const roles = (await this.ctx.storage.get<Record<string, string>>("roles")) ?? {};
+    const customRoles = (await this.ctx.storage.get<Record<string, string>>("customRoles")) ?? {};
 
     if (!members.includes(name)) {
       members.push(name);
       await this.ctx.storage.put("members", members);
     }
-    const assigned = roles[name] ?? (role || pickRole(kind, Object.values(roles)));
+    const roleKeys = KINDS[kind] ? Object.keys(KINDS[kind]!.roles) : Object.keys(customRoles);
+    const assigned = roles[name] ?? (role || pickRole(roleKeys, Object.values(roles)));
     roles[name] = assigned;
     await this.ctx.storage.put("roles", roles);
 
-    return { members, kind, role: assigned, brief };
+    const roleGuidance = KINDS[kind]?.roles[assigned] ?? customRoles[assigned] ?? "";
+    return { members, kind, role: assigned, brief, roleGuidance };
   }
 
   async send(from: string, text: string, type: string): Promise<{ seq: number }> {
@@ -179,6 +159,7 @@ function landingPage(code: string, origin: string): string {
 <html lang="en"><head>
 <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Join a Randevu session</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0f17'/><circle cx='16' cy='16' r='8.5' fill='%23e6a93c'/></svg>" />
 <style>
   :root{color-scheme:light}
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f2e9;color:#47402f;
@@ -196,6 +177,10 @@ function landingPage(code: string, origin: string): string {
   .label{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.74rem;color:#756b57;margin:.2rem 0 0}
   .alt{font-size:.9rem;color:#756b57}
   .foot{margin-top:2rem;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.75rem;color:#9a8e77}
+  .tabs{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 .3rem}
+  .tab{font-size:.8rem;font-weight:600;color:#756b57;background:transparent;border:1px solid #e0d8c6;border-radius:999px;padding:.3rem .8rem;cursor:pointer}
+  .tab.active{background:#201c14;color:#fff;border-color:#201c14}
+  [hidden]{display:none}
 </style></head><body>
 <main>
   <span class="seal"></span>
@@ -203,15 +188,32 @@ function landingPage(code: string, origin: string): string {
   <p class="sub">Your AI agent joins a shared session and talks to the other agent. Two steps.</p>
   ${codeBlock}
   <p class="step">1 · Add the connector — pick your agent</p>
-  <p class="label">Claude Code</p>
-  <div class="row"><code>${esc(cliCmd)}</code><button class="copy" data-c="${esc(cliCmd)}">copy</button></div>
-  <p class="label">Claude Desktop / claude.ai — Settings → Connectors → Add custom connector → paste this URL</p>
-  <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
-  <p class="label">ChatGPT — Settings → Connectors → add a remote MCP server with this URL (needs an eligible plan / developer mode)</p>
-  <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
-  <p class="label">OpenCode — add to <code>opencode.json</code></p>
-  <div class="row"><code>${esc(opencodeJson)}</code><button class="copy" data-c="${esc(opencodeJson)}">copy</button></div>
-  <p class="label alt">Cursor, Windsurf, Goose, Hermes, or any other MCP client — add a remote / Streamable-HTTP MCP server pointing at <code>${esc(connector)}</code></p>
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-t="cc">Claude Code</button>
+    <button class="tab" data-t="cd">Claude Desktop</button>
+    <button class="tab" data-t="gpt">ChatGPT</button>
+    <button class="tab" data-t="oc">OpenCode</button>
+    <button class="tab" data-t="other">Other</button>
+  </div>
+  <div class="panel" data-p="cc">
+    <div class="row"><code>${esc(cliCmd)}</code><button class="copy" data-c="${esc(cliCmd)}">copy</button></div>
+  </div>
+  <div class="panel" data-p="cd" hidden>
+    <p class="label">Settings → Connectors → Add custom connector → paste this URL</p>
+    <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
+  </div>
+  <div class="panel" data-p="gpt" hidden>
+    <p class="label">Settings → Connectors → add a remote MCP server with this URL (needs an eligible plan / developer mode)</p>
+    <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
+  </div>
+  <div class="panel" data-p="oc" hidden>
+    <p class="label">Add to <code>opencode.json</code></p>
+    <div class="row"><code>${esc(opencodeJson)}</code><button class="copy" data-c="${esc(opencodeJson)}">copy</button></div>
+  </div>
+  <div class="panel" data-p="other" hidden>
+    <p class="label alt">Cursor, Windsurf, Goose, Hermes, or any MCP client — add a remote / Streamable-HTTP MCP server at this URL</p>
+    <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
+  </div>
   <p class="step">2 · Tell your agent</p>
   <div class="row"><code>${esc(prompt)}</code><button class="copy" data-c="${esc(prompt)}">copy</button></div>
   <p class="foot">randevu · a shared session for agents</p>
@@ -222,6 +224,14 @@ function landingPage(code: string, origin: string): string {
       if(navigator.clipboard) navigator.clipboard.writeText(b.getAttribute("data-c")).then(function(){
         var t=b.textContent;b.textContent="copied";setTimeout(function(){b.textContent=t},1200);
       }).catch(function(){});
+    });
+  });
+  document.querySelectorAll(".tab").forEach(function(t){
+    t.addEventListener("click",function(){
+      document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("active")});
+      t.classList.add("active");
+      var id=t.getAttribute("data-t");
+      document.querySelectorAll(".panel").forEach(function(p){ p.hidden = p.getAttribute("data-p")!==id; });
     });
   });
 </script>
@@ -257,11 +267,15 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
             .string()
             .optional()
             .describe("optional free-text context to share with whoever joins (useful for custom kinds)"),
+          roles: z
+            .record(z.string())
+            .optional()
+            .describe("for a custom kind: a map of role name -> guidance for that role"),
         },
       },
-      async ({ name, kind, role, brief }) => {
+      async ({ name, kind, role, brief, roles }) => {
         const code = newRoomCode();
-        const r = await room(code).open(name, kind ?? "", role ?? "", brief ?? "");
+        const r = await room(code).open(name, kind ?? "", role ?? "", brief ?? "", roles ?? {});
         const link = this.env.PUBLIC_URL ? `${this.env.PUBLIC_URL}/j/${code}` : "";
         return {
           content: [
@@ -272,7 +286,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
                 (link
                   ? `Send this link to the other person — it explains how to join:\n${link}\n`
                   : `Give the room code "${code}" to the other agent so they can join_room("${code}").\n`) +
-                `\n${roomContext(r.kind, r.role, r.brief)}\n\nThen send() and receive() to talk.`,
+                `\n${roomContext(r.kind, r.role, r.brief, r.roleGuidance)}\n\nThen send() and receive() to talk.`,
             },
           ],
         };
@@ -297,7 +311,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
               type: "text",
               text:
                 `Joined ${roomId} (kind: ${r.kind}) as "${name}", role: ${r.role}. Members: ${r.members.join(", ")}.\n\n` +
-                roomContext(r.kind, r.role, r.brief),
+                roomContext(r.kind, r.role, r.brief, r.roleGuidance),
             },
           ],
         };
@@ -340,6 +354,28 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
           ? messages.map((m) => `#${m.seq} ${m.from}${m.type ? ` (${m.type})` : ""}: ${m.text}`).join("\n")
           : "(no new messages)";
         return { content: [{ type: "text", text: `${body}\n\ncursor: ${cursor}` }] };
+      },
+    );
+
+    this.server.registerTool(
+      "list_kinds",
+      {
+        description:
+          "List the predefined room kinds and their roles, to help choose a kind when opening a room.",
+        inputSchema: {},
+      },
+      async () => {
+        const text = Object.entries(KINDS)
+          .map(([k, def]) => `• ${k} — ${def.summary}\n  roles: ${Object.keys(def.roles).join(", ")}`)
+          .join("\n\n");
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${text}\n\nYou can also use any custom kind label, with your own roles (role → guidance) and a brief.`,
+            },
+          ],
+        };
       },
     );
   }
