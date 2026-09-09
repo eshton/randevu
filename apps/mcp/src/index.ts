@@ -429,7 +429,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
         const { messages, cursor } = await r.wait(seq, ms); // wait for replies after our own message
         const reply = messages.length
           ? messages.map((m) => `#${m.seq} ${m.from}${m.type ? ` (${m.type})` : ""}: ${m.text}`).join("\n")
-          : "(sent; no reply yet — call send_and_wait or wait_for_message again to keep listening)";
+          : `(sent; no reply yet. Your message IS already posted — do NOT call send_and_wait again or it will re-send. To keep waiting, call wait_for_message with after: ${cursor}.)`;
         return {
           content: [{ type: "text", text: `sent (#${seq})${type ? ` [${type}]` : ""}\n\n${reply}\n\ncursor: ${cursor}` }],
         };
