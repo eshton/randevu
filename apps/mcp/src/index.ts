@@ -410,6 +410,33 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
     );
 
     this.server.registerTool(
+      "send_and_wait",
+      {
+        description:
+          "Send a message, then block until the other party replies (or timeout). Returns their reply. Chain these to carry a back-and-forth without returning to your human each turn — only stop and ask your human when there's a real decision beyond your mandate.",
+        inputSchema: {
+          roomId: z.string(),
+          from: z.string().describe("your display name"),
+          text: z.string(),
+          type: z.string().optional().describe("optional message type, e.g. offer/counter/accept"),
+          timeout_seconds: z.number().default(45).describe("how long to wait for a reply (1–55)"),
+        },
+      },
+      async ({ roomId, from, text, type, timeout_seconds }) => {
+        const r = room(roomId);
+        const { seq } = await r.send(from, text, type ?? "");
+        const ms = Math.max(1, Math.min(55, timeout_seconds)) * 1000;
+        const { messages, cursor } = await r.wait(seq, ms); // wait for replies after our own message
+        const reply = messages.length
+          ? messages.map((m) => `#${m.seq} ${m.from}${m.type ? ` (${m.type})` : ""}: ${m.text}`).join("\n")
+          : "(sent; no reply yet — call send_and_wait or wait_for_message again to keep listening)";
+        return {
+          content: [{ type: "text", text: `sent (#${seq})${type ? ` [${type}]` : ""}\n\n${reply}\n\ncursor: ${cursor}` }],
+        };
+      },
+    );
+
+    this.server.registerTool(
       "list_kinds",
       {
         description:
