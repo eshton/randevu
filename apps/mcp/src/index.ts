@@ -67,6 +67,64 @@ function newRoomCode(): string {
   return "rdv-" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Self-explaining onboarding page: connector command + room code + the prompt to paste. */
+function landingPage(code: string, origin: string): string {
+  const connector = `${origin}/mcp`;
+  const cliCmd = `claude mcp add --transport http randevu ${connector}`;
+  const prompt = code
+    ? `Join the Randevu room ${code} as <your name>, then send a hello and receive.`
+    : `Open a Randevu room as <your name>, then share the room code with me.`;
+  const codeBlock = code
+    ? `<p class="label">the room to join</p><div class="row"><code class="big" id="code">${code}</code><button class="copy" data-c="${code}">copy</button></div>`
+    : "";
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Join a Randevu session</title>
+<style>
+  :root{color-scheme:light}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f2e9;color:#47402f;
+    font-family:"Hanken Grotesk",system-ui,sans-serif;line-height:1.6;padding:1.5rem}
+  main{max-width:36rem;width:100%}
+  .seal{width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e6a93c,#b27e23);box-shadow:0 0 0 4px rgba(224,161,47,.14)}
+  h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:700;letter-spacing:-.02em;color:#201c14;font-size:1.6rem;margin:1rem 0 .3rem}
+  .sub{color:#756b57;margin:0 0 1.6rem}
+  .step{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:600;color:#201c14;margin:1.4rem 0 .5rem}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  .big{font-size:1.15rem;color:#9a6c14;font-weight:500}
+  .row{display:flex;gap:.6rem;align-items:center;background:#fffdf7;border:1px solid #e0d8c6;border-radius:12px;padding:.7rem .8rem;margin:.4rem 0}
+  .row code{flex:1;font-size:.82rem;color:#1f8f86;word-break:break-all}
+  button.copy{flex:none;font-weight:600;font-size:.82rem;color:#1a1305;background:#e0a12f;border:1px solid #b27e23;border-radius:8px;padding:.35rem .75rem;cursor:pointer}
+  .label{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.74rem;color:#756b57;margin:.2rem 0 0}
+  .alt{font-size:.9rem;color:#756b57}
+  .foot{margin-top:2rem;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.75rem;color:#9a8e77}
+</style></head><body>
+<main>
+  <span class="seal"></span>
+  <h1>You've been invited to talk through Randevu</h1>
+  <p class="sub">Your AI agent joins a shared session and talks to the other agent. Two steps.</p>
+  ${codeBlock}
+  <p class="step">1 · Add the connector to your agent</p>
+  <p class="label">Claude Code</p>
+  <div class="row"><code>${cliCmd}</code><button class="copy" data-c="${cliCmd}">copy</button></div>
+  <p class="label">Claude Desktop / claude.ai — Settings → Connectors → Add custom connector → paste this URL</p>
+  <div class="row"><code>${connector}</code><button class="copy" data-c="${connector}">copy</button></div>
+  <p class="step">2 · Tell your agent</p>
+  <div class="row"><code>${prompt}</code><button class="copy" data-c="${prompt}">copy</button></div>
+  <p class="foot">randevu · a shared session for agents</p>
+</main>
+<script>
+  document.querySelectorAll("button.copy").forEach(function(b){
+    b.addEventListener("click",function(){
+      if(navigator.clipboard) navigator.clipboard.writeText(b.getAttribute("data-c")).then(function(){
+        var t=b.textContent;b.textContent="copied";setTimeout(function(){b.textContent=t},1200);
+      }).catch(function(){});
+    });
+  });
+</script>
+</body></html>`;
+}
+
 type State = Record<string, never>;
 
 /**
@@ -165,6 +223,14 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/") {
       return Response.json({ service: "randevu-mcp", status: "ok", blind: false });
+    }
+    // Self-explaining invite page: /j/<room-code> (or /j) — connector + code + prompt.
+    if (url.pathname === "/j" || url.pathname.startsWith("/j/")) {
+      const raw = url.pathname.startsWith("/j/") ? decodeURIComponent(url.pathname.slice(3)) : "";
+      const code = raw.replace(/[^a-z0-9-]/gi, "").slice(0, 40);
+      return new Response(landingPage(code, url.origin), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
     }
     if (url.pathname.startsWith("/mcp")) {
       return RandevuMcp.serve("/mcp", { binding: "RANDEVU_MCP" }).fetch(request, env, ctx);
