@@ -26,5 +26,10 @@ export function verifyRequest(
   canonical: string,
   signatureHex: string,
 ): boolean {
-  return verify(hexToBytes(signatureHex), requestAuthBytes(canonical), identityPublicKey);
+  // Attacker-controlled hex: decode failure must be a clean false, never a throw.
+  try {
+    return verify(hexToBytes(signatureHex), requestAuthBytes(canonical), identityPublicKey);
+  } catch {
+    return false;
+  }
 }

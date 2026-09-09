@@ -66,6 +66,13 @@ describe("group key holder signature (RDV-34)", () => {
     // wrong epoch
     expect(verifyGroupKey("rdv_x", 2, gk, commitment, signature, holder.publicKey)).toBe(false);
   });
+
+  it("returns false (not throws) on malformed signature hex", () => {
+    const holder = generateIdentityKeyPair();
+    const gk = generateGroupKey();
+    const { commitment } = signGroupKey("rdv_x", 1, gk, holder.privateKey);
+    expect(verifyGroupKey("rdv_x", 1, gk, commitment, "zz-not-hex", holder.publicKey)).toBe(false);
+  });
 });
 
 describe("message encryption", () => {

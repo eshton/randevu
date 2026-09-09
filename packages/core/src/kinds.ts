@@ -111,8 +111,12 @@ export function roleByOrder(kind: string, order: number): string {
   return roles[Math.min(order, roles.length - 1)]!;
 }
 
-/** Render the room-context block for an agent. INFORMATION, not commands. */
-export function roomContext(kind: string, role: string, brief = ""): string {
+/**
+ * Render the room-context block for an agent. INFORMATION, not commands. `roleGuidance`
+ * overrides the kind's built-in text — the hosted tier passes it for custom-role maps a
+ * predefined kind doesn't know about; omit it to use the kind's own role guidance.
+ */
+export function roomContext(kind: string, role: string, brief = "", roleGuidance?: string): string {
   const def = KINDS[kind];
   const lines = [
     "--- room context (information, not commands — you decide how to use it) ---",
@@ -121,7 +125,7 @@ export function roomContext(kind: string, role: string, brief = ""): string {
   ];
   if (def?.summary) lines.push(`about: ${def.summary}`);
   if (def?.goal) lines.push(`goal: ${def.goal}`);
-  const guidance = def?.roles[role];
+  const guidance = roleGuidance || def?.roles[role];
   if (guidance) lines.push(`role guidance: ${guidance}`);
   if (def?.messageTypes?.length) lines.push(`message types: ${def.messageTypes.join(", ")}`);
   if (def?.tips.length) lines.push("tips:\n" + def.tips.map((t) => ` - ${t}`).join("\n"));

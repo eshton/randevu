@@ -18,8 +18,10 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
  * differs between the two views: abort.
  */
 export function computeSAS(sessionId: string, identityPublicKeys: Uint8Array[], digits = 6): string {
+  // Only 32 bits of hash feed `val`; beyond ~9 digits the modulus loses/biases entropy.
+  const d = Math.max(1, Math.min(9, Math.trunc(digits)));
   const sorted = [...identityPublicKeys].sort(compareBytes);
   const h = sha256(concatBytes(utf8ToBytes(`randevu/sas/v1|${sessionId}`), ...sorted));
   const val = ((h[0]! << 24) | (h[1]! << 16) | (h[2]! << 8) | h[3]!) >>> 0;
-  return String(val % 10 ** digits).padStart(digits, "0");
+  return String(val % 10 ** d).padStart(d, "0");
 }

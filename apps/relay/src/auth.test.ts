@@ -50,6 +50,12 @@ describe("relay request auth (RDV-32)", () => {
     expect((await dispatchSession(s, statusCtx({ member: fp, timestamp, signature }))).status).toBe(401);
   });
 
+  it("rejects malformed signature hex without throwing (401, not 500)", async () => {
+    const { s, fp } = await memberSession();
+    const timestamp = String(Date.now());
+    expect((await dispatchSession(s, statusCtx({ member: fp, timestamp, signature: "zz-not-hex" }))).status).toBe(401);
+  });
+
   it("rejects a stale timestamp", async () => {
     const { s, id, fp } = await memberSession();
     const timestamp = String(Date.now() - 600_000);

@@ -1,4 +1,4 @@
-export { VERSION } from "./version";
+export { VERSION, HOSTED_RELAY_URL } from "./version";
 export {
   generateIdentityKeyPair,
   generateAgreementKeyPair,

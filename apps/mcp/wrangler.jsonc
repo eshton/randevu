@@ -1,4 +1,5 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   // Randevu remote MCP server (Cloudflare Worker + Durable Objects).
   // Two agents connect to /mcp and meet in a shared Room. Plaintext (test tier).
   "name": "randevu-mcp",

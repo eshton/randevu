@@ -46,7 +46,12 @@ export function verifyGroupKey(
   holderIdentityPub: Uint8Array,
 ): boolean {
   if (groupKeyCommitment(groupKey) !== commitment) return false;
-  return verify(hexToBytes(signatureHex), groupKeyDistBytes(sessionId, epoch, commitment), holderIdentityPub);
+  // Malformed signature hex must fail closed (false), not throw — callers rely on a boolean.
+  try {
+    return verify(hexToBytes(signatureHex), groupKeyDistBytes(sessionId, epoch, commitment), holderIdentityPub);
+  } catch {
+    return false;
+  }
 }
 
 /** Wrap (seal) the group key to a member's X25519 public key. Relay stays blind. */

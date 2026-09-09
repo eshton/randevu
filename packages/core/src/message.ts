@@ -4,7 +4,17 @@ import { randomBytes, concatBytes, utf8ToBytes, bytesToHex } from "@noble/hashes
 import { bytesToUtf8 } from "@noble/ciphers/utils";
 import { sign, verify } from "./crypto";
 
-export type MessageType = "message" | "offer" | "counter" | "accept" | "reject";
+/**
+ * Message type tag. Opaque to the relay and open-ended: room kinds advertise many
+ * (offer, counter, accept, reject, propose, draft, edit, approve, idea, question, …),
+ * so this is a plain string, not a closed union — the tag is authenticated by the
+ * sender's signature, not constrained by the wire type. COMMON_MESSAGE_TYPES lists the
+ * base set for reference/UX.
+ */
+export type MessageType = string;
+
+/** The base message types shared across kinds (kinds may advertise more). */
+export const COMMON_MESSAGE_TYPES = ["message", "offer", "counter", "accept", "reject"] as const;
 
 export interface EncryptedMessage {
   /** 24-byte XChaCha20 nonce. */

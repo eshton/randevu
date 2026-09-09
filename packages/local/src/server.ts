@@ -95,6 +95,12 @@ export class RandevuLocal {
   kind = "";
   myRole = "";
   private role?: "creator" | "member";
+  /**
+   * The key-holder's identity fingerprint, pinned from the invite (anti-MITM). The group
+   * key is only ever trusted from this fingerprint — never from whoever the relay names as
+   * `creatorId`, so a malicious relay + a colluding member can't substitute the holder.
+   */
+  private creatorFingerprint = "";
   private groupKey?: Uint8Array;
   /** All group keys this member has held, by epoch — disclosed in an exported transcript. */
   private readonly groupKeys = new Map<number, Uint8Array>();
@@ -152,6 +158,7 @@ export class RandevuLocal {
     const res = await this.relay.createSession({ maxMembers, creator: this.selfDTO() });
     this.sessionId = res.sessionId;
     this.role = "creator";
+    this.creatorFingerprint = this.memberId; // we are the key-holder
     this.cache([this.selfDTO()]);
     const inviteObj: Invite = {
       sessionId: res.sessionId,
@@ -166,6 +173,7 @@ export class RandevuLocal {
     const parsed = parseInvite(invite);
     this.sessionId = parsed.sessionId;
     this.role = "member";
+    this.creatorFingerprint = parsed.fingerprint; // pin the key-holder from the invite
     const res = await this.relay.joinSession(parsed.sessionId, {
       joinToken: parsed.joinToken,
       member: this.selfDTO(),
@@ -179,6 +187,21 @@ export class RandevuLocal {
       throw new Error("creator fingerprint mismatch — possible MITM");
     }
     this.cache(res.members);
+  }
+
+  /**
+   * Resolve the key-holder the relay names, asserting it matches the fingerprint pinned
+   * from the invite. Blocks a malicious relay from pointing `creatorId` at a colluding
+   * member whose self-signed group key would otherwise verify (SAS can't catch this —
+   * all identity keys are legitimate members' keys; only the holder is wrong).
+   */
+  private resolveHolder(creatorId: string): MemberDTO {
+    if (this.creatorFingerprint && creatorId !== this.creatorFingerprint) {
+      throw new Error("relay named an unexpected key-holder — possible substitution");
+    }
+    const holder = this.membersById.get(creatorId);
+    if (!holder) throw new Error("key-holder not present in session");
+    return holder;
   }
 
   /** Key-holder path: generate the epoch group key and wrap it to every member. */
@@ -214,8 +237,8 @@ export class RandevuLocal {
     this.cache(status.members);
     const { wrappedKey, commitment, signature } = await this.relay.getKey(sessionId, this.epoch, this.memberId);
     const gk = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
-    const holder = this.membersById.get(status.creatorId);
-    if (!holder || !verifyGroupKey(sessionId, this.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
+    const holder = this.resolveHolder(status.creatorId);
+    if (!verifyGroupKey(sessionId, this.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
       throw new Error("group key failed holder verification — possible relay/member substitution");
     }
     this.groupKey = gk;
@@ -260,8 +283,8 @@ export class RandevuLocal {
       try {
         const { wrappedKey, commitment, signature } = await this.relay.getKey(sessionId, status.epoch, this.memberId);
         const gk = unwrapGroupKey(hexToBytes(wrappedKey), this.agreement);
-        const holder = this.membersById.get(status.creatorId);
-        if (!holder || !verifyGroupKey(sessionId, status.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
+        const holder = this.resolveHolder(status.creatorId);
+        if (!verifyGroupKey(sessionId, status.epoch, gk, commitment, signature, hexToBytes(holder.identityPub))) {
           throw new Error("group key failed holder verification — possible relay/member substitution");
         }
         this.groupKey = gk;
@@ -312,7 +335,7 @@ export class RandevuLocal {
       const ctx = { sessionId, epoch: m.epoch, senderId: m.senderId };
       const env: SignableEnvelope = {
         ...ctx,
-        type: m.type as MessageType,
+        type: m.type,
         prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
         ref: m.ref,
         nonce: hexToBytes(m.nonce),
@@ -328,12 +351,17 @@ export class RandevuLocal {
 
       const verified = sigOk && chainOk;
       let body = "";
-      // Decrypt with the key for the message's OWN epoch (not just the current one).
-      const key = this.groupKeys.get(m.epoch) ?? this.groupKey;
+      // Decrypt only with the key for the message's OWN epoch — never fall back to a
+      // different epoch's key (its AEAD tag would throw and take down the whole pull).
+      const key = this.groupKeys.get(m.epoch);
       if (verified && m.senderId !== this.memberId && key) {
-        body = decryptMessage(key, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
+        try {
+          body = decryptMessage(key, ctx, { nonce: env.nonce, ciphertext: env.ciphertext });
+        } catch {
+          body = ""; // undecryptable (tampered / wrong key) — kept in the log as empty
+        }
       }
-      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type as MessageType, verified, chainOk, body, id, dto: m });
+      this.log.push({ seq: m.seq, senderId: m.senderId, type: m.type, verified, chainOk, body, id, dto: m });
       this.fetchedSeq = Math.max(this.fetchedSeq, m.seq);
     }
   }
@@ -352,7 +380,7 @@ export class RandevuLocal {
     const enc = encryptMessage(this.groupKey, ctx, body);
     const env: SignableEnvelope = {
       ...ctx,
-      type: type as MessageType,
+      type,
       prevHash: this.head,
       ref,
       nonce: enc.nonce,
@@ -480,7 +508,10 @@ export class RandevuLocal {
       if (remaining <= 0) return [];
       try {
         await this.relay.wait(sessionId, this.fetchedSeq, Math.min(50, Math.ceil(remaining / 1000)));
-      } catch {
+      } catch (err) {
+        // A relay that doesn't implement /wait answers 404 — fall back to a short poll.
+        // A real failure (auth rejection, 5xx) must surface, not spin silently.
+        if (err instanceof RelayError && err.status !== 404) throw err;
         await new Promise((r) => setTimeout(r, Math.min(1500, remaining)));
       }
     }
@@ -520,7 +551,7 @@ export class RandevuLocal {
           seq: e.dto.seq,
           epoch: e.dto.epoch,
           senderId: e.dto.senderId,
-          type: e.dto.type as MessageType,
+          type: e.dto.type,
           nonce: e.dto.nonce,
           ciphertext: e.dto.ciphertext,
           prevHash: e.dto.prevHash,
@@ -616,9 +647,4 @@ export class RandevuLocal {
     if (!this.sessionId) throw new Error("no active session");
     return this.sessionId;
   }
-}
-
-/** Convenience factory (kept for the MCP entrypoint). */
-export function createRandevuServer(options: RandevuLocalOptions): RandevuLocal {
-  return new RandevuLocal(options);
 }

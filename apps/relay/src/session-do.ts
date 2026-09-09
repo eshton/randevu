@@ -76,7 +76,9 @@ export class SessionDurableObject implements DurableObject {
       );
       if (url.pathname === "/messages" && method === "POST" && result.status === 200) this.waiters.wakeAll();
       return Response.json(result.body, { status: result.status });
-    } catch {
+    } catch (err) {
+      // observability is enabled in wrangler.jsonc — log so production 500s are debuggable.
+      console.error("session-do error", url.pathname, method, err);
       return Response.json({ error: "internal_error" }, { status: 500 });
     }
   }

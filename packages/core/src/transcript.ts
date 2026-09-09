@@ -88,40 +88,75 @@ function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean
  * group key. This is the non-repudiation proof: who signed exactly what, in order.
  */
 export function verifyTranscript(bundle: TranscriptBundle): TranscriptVerification {
+  // An offline verifier is fed adversarial/corrupt bundles by design — malformed hex or
+  // a missing field must yield valid:false, never an uncaught throw. Guard every decode.
+  const members = Array.isArray(bundle.members) ? bundle.members : [];
   const idByFingerprint = new Map<string, Uint8Array>();
-  let membersValid = true;
-  for (const m of bundle.members) {
-    const pub = hexToBytes(m.identityPub);
-    idByFingerprint.set(m.fingerprint, pub);
-    if (fingerprint(pub) !== m.fingerprint || didKeyFromEd25519(pub) !== m.did) {
+  let membersValid = members.length > 0;
+  for (const m of members) {
+    try {
+      const pub = hexToBytes(m.identityPub);
+      idByFingerprint.set(m.fingerprint, pub);
+      if (fingerprint(pub) !== m.fingerprint || didKeyFromEd25519(pub) !== m.did) {
+        membersValid = false;
+      }
+    } catch {
       membersValid = false;
     }
   }
 
   const keyByEpoch = new Map<number, Uint8Array>();
-  for (const g of bundle.groupKeys) keyByEpoch.set(g.epoch, hexToBytes(g.key));
+  for (const g of Array.isArray(bundle.groupKeys) ? bundle.groupKeys : []) {
+    try {
+      keyByEpoch.set(g.epoch, hexToBytes(g.key));
+    } catch {
+      // skip a corrupt disclosed key; messages in that epoch then fail to decrypt (invalid)
+    }
+  }
 
-  const ordered = [...bundle.messages].sort((a, b) => a.seq - b.seq);
+  const ordered = [...(Array.isArray(bundle.messages) ? bundle.messages : [])].sort((a, b) => a.seq - b.seq);
   let head: Uint8Array | null = null;
   let valid = membersValid;
   const messages: VerifiedTranscriptMessage[] = [];
   const byId = new Map<string, VerifiedTranscriptMessage>();
 
   for (const m of ordered) {
-    const env: SignableEnvelope = {
-      sessionId: bundle.sessionId,
-      epoch: m.epoch,
-      senderId: m.senderId,
-      type: m.type,
-      prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
-      ref: m.ref,
-      nonce: hexToBytes(m.nonce),
-      ciphertext: hexToBytes(m.ciphertext),
-    };
+    let env: SignableEnvelope;
+    try {
+      env = {
+        sessionId: bundle.sessionId,
+        epoch: m.epoch,
+        senderId: m.senderId,
+        type: m.type,
+        prevHash: m.prevHash ? hexToBytes(m.prevHash) : null,
+        ref: m.ref,
+        nonce: hexToBytes(m.nonce),
+        ciphertext: hexToBytes(m.ciphertext),
+      };
+    } catch {
+      // A message with undecodable hex can't be placed in the chain — bundle is invalid.
+      valid = false;
+      messages.push({
+        seq: m.seq,
+        id: "",
+        senderId: m.senderId,
+        type: m.type,
+        ref: m.ref,
+        body: null,
+        signatureValid: false,
+        chainValid: false,
+      });
+      continue;
+    }
     const signingBytes = messageSigningBytes(env);
     const id = bytesToHex(signingBytes);
     const pub = idByFingerprint.get(m.senderId);
-    const signatureValid = pub ? verifyMessage(env, hexToBytes(m.signature), pub) : false;
+    let signatureValid = false;
+    try {
+      signatureValid = pub ? verifyMessage(env, hexToBytes(m.signature), pub) : false;
+    } catch {
+      signatureValid = false;
+    }
     const chainValid = bytesEqualNullable(env.prevHash, head);
     head = chainHash(head, signingBytes);
 
