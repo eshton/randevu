@@ -10,7 +10,7 @@
   // when the RESEND_API_KEY secret is set (`wrangler secret put RESEND_API_KEY`).
   "vars": {
     "PUBLIC_URL": "https://mcp.randevu.run",
-    "FROM_EMAIL": "invites@randevu.run"
+    "FROM_EMAIL": "invites@send.randevu.run"
   },
   "durable_objects": {
     "bindings": [
