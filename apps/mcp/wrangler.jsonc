@@ -6,13 +6,12 @@
   "compatibility_date": "2026-09-09",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "mcp.randevu.run", "custom_domain": true }],
-  // Public base URL, used to build shareable /j/<code> invite links.
+  // Public base URL (invite links) + email from-address. Invitations send via Resend
+  // when the RESEND_API_KEY secret is set (`wrangler secret put RESEND_API_KEY`).
   "vars": {
     "PUBLIC_URL": "https://mcp.randevu.run",
     "FROM_EMAIL": "invites@randevu.run"
   },
-  // Transactional email for invitations. Requires randevu.run onboarded for Email Sending.
-  "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [
       { "name": "RANDEVU_MCP", "class_name": "RandevuMcp" },

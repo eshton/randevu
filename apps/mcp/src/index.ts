@@ -4,26 +4,36 @@ import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import kindsConfig from "./kinds.json";
 
-/** Minimal shape of the Cloudflare Email Sending binding. */
-interface EmailSender {
-  send(message: {
-    to: string;
-    from: { email: string; name?: string };
-    subject: string;
-    html: string;
-    text: string;
-  }): Promise<unknown>;
-}
-
 export interface Env {
   RANDEVU_MCP: DurableObjectNamespace<RandevuMcp>;
   ROOM: DurableObjectNamespace<Room>;
   /** Public base URL for building shareable /j/<code> invite links (from wrangler vars). */
   PUBLIC_URL?: string;
-  /** Email Sending binding (only sends once a domain is onboarded). */
-  EMAIL?: EmailSender;
-  /** From-address for invitation emails, on an onboarded domain. Unset = don't send. */
+  /** From-address for invitation emails (on the Resend-verified domain). */
   FROM_EMAIL?: string;
+  /** Resend API key (secret). Unset = don't send, fall back to returning the link. */
+  RESEND_API_KEY?: string;
+}
+
+/** Send one transactional email via Resend. Throws on non-2xx. */
+async function sendViaResend(
+  apiKey: string,
+  fromEmail: string,
+  to: string,
+  mail: { subject: string; html: string; text: string },
+): Promise<void> {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      from: `Randevu <${fromEmail}>`,
+      to,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    }),
+  });
+  if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 140)}`);
 }
 
 interface RoomMessage {
@@ -454,15 +464,9 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
             joinUrl: link,
             inviteeName: inv.name ?? "",
           });
-          if (this.env.EMAIL && this.env.FROM_EMAIL) {
+          if (this.env.RESEND_API_KEY && this.env.FROM_EMAIL) {
             try {
-              await this.env.EMAIL.send({
-                to: inv.email,
-                from: { email: this.env.FROM_EMAIL, name: "Randevu" },
-                subject: mail.subject,
-                html: mail.html,
-                text: mail.text,
-              });
+              await sendViaResend(this.env.RESEND_API_KEY, this.env.FROM_EMAIL, inv.email, mail);
               notes.push(`emailed the invite to ${inv.email}`);
             } catch (err) {
               notes.push(
