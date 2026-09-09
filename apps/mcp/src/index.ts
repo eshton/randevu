@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import kindsConfig from "./kinds.json";
+import { KINDS, listKinds } from "@randevu/core";
 
 export interface Env {
   RANDEVU_MCP: DurableObjectNamespace<RandevuMcp>;
@@ -46,27 +46,7 @@ interface RoomMessage {
   ts: number;
 }
 
-/**
- * Predefined room kinds. Each carries optional context an agent can pull in — a
- * summary, a per-role brief, and tips — to enrich how it plays its part. This is
- * INFORMATION, never enforced rules: it's returned on open/join and the agent
- * decides what to do with it. Openers may also use a custom kind (+ free-text brief).
- */
-interface KindDef {
-  summary: string;
-  /** What "done" looks like for this kind. */
-  goal: string;
-  /** role name -> guidance for that role. Ordered; roles are assigned in this order. */
-  roles: Record<string, string>;
-  /** Suggested message `type` tags for this kind. */
-  messageTypes?: string[];
-  tips: string[];
-  /** When the agent should stop and check with its human. */
-  escalate?: string;
-}
-
-/** Predefined kinds, loaded from kinds.json (edit + redeploy to tune the prompts). */
-const KINDS = kindsConfig as Record<string, KindDef>;
+// Room kinds (KINDS) + listKinds come from @randevu/core — shared with the blind tier.
 
 /** If the latest message is an "awaiting_human" pause, tell the reader to back off. */
 function pauseNote(messages: RoomMessage[]): string {
@@ -679,22 +659,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
           "List the predefined room kinds and their roles, to help choose a kind when opening a room.",
         inputSchema: {},
       },
-      async () => {
-        const text = Object.entries(KINDS)
-          .map(
-            ([k, def]) =>
-              `• ${k} — ${def.summary}\n  roles: ${Object.keys(def.roles).join(", ")}\n  goal: ${def.goal}`,
-          )
-          .join("\n\n");
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${text}\n\nYou can also use any custom kind label, with your own roles (role → guidance) and a brief.`,
-            },
-          ],
-        };
-      },
+      async () => ({ content: [{ type: "text", text: listKinds() }] }),
     );
   }
 }
