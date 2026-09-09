@@ -5,6 +5,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-09",
   "compatibility_flags": ["nodejs_compat"],
+  // Public base URL, used to build shareable /j/<code> invite links. Update on custom domain.
+  "vars": {
+    "PUBLIC_URL": "https://randevu-mcp.agoston-fung.workers.dev"
+  },
   "durable_objects": {
     "bindings": [
       { "name": "RANDEVU_MCP", "class_name": "RandevuMcp" },

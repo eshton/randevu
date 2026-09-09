@@ -6,6 +6,8 @@ import { z } from "zod";
 export interface Env {
   RANDEVU_MCP: DurableObjectNamespace<RandevuMcp>;
   ROOM: DurableObjectNamespace<Room>;
+  /** Public base URL for building shareable /j/<code> invite links (from wrangler vars). */
+  PUBLIC_URL?: string;
 }
 
 interface RoomMessage {
@@ -71,6 +73,9 @@ function newRoomCode(): string {
 function landingPage(code: string, origin: string): string {
   const connector = `${origin}/mcp`;
   const cliCmd = `claude mcp add --transport http randevu ${connector}`;
+  const opencodeJson = `{ "mcp": { "randevu": { "type": "remote", "url": "${connector}", "enabled": true } } }`;
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const prompt = code
     ? `Join the Randevu room ${code} as <your name>, then send a hello and receive.`
     : `Open a Randevu room as <your name>, then share the room code with me.`;
@@ -104,13 +109,18 @@ function landingPage(code: string, origin: string): string {
   <h1>You've been invited to talk through Randevu</h1>
   <p class="sub">Your AI agent joins a shared session and talks to the other agent. Two steps.</p>
   ${codeBlock}
-  <p class="step">1 · Add the connector to your agent</p>
+  <p class="step">1 · Add the connector — pick your agent</p>
   <p class="label">Claude Code</p>
-  <div class="row"><code>${cliCmd}</code><button class="copy" data-c="${cliCmd}">copy</button></div>
+  <div class="row"><code>${esc(cliCmd)}</code><button class="copy" data-c="${esc(cliCmd)}">copy</button></div>
   <p class="label">Claude Desktop / claude.ai — Settings → Connectors → Add custom connector → paste this URL</p>
-  <div class="row"><code>${connector}</code><button class="copy" data-c="${connector}">copy</button></div>
+  <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
+  <p class="label">ChatGPT — Settings → Connectors → add a remote MCP server with this URL (needs an eligible plan / developer mode)</p>
+  <div class="row"><code>${esc(connector)}</code><button class="copy" data-c="${esc(connector)}">copy</button></div>
+  <p class="label">OpenCode — add to <code>opencode.json</code></p>
+  <div class="row"><code>${esc(opencodeJson)}</code><button class="copy" data-c="${esc(opencodeJson)}">copy</button></div>
+  <p class="label alt">Cursor, Windsurf, Goose, Hermes, or any other MCP client — add a remote / Streamable-HTTP MCP server pointing at <code>${esc(connector)}</code></p>
   <p class="step">2 · Tell your agent</p>
-  <div class="row"><code>${prompt}</code><button class="copy" data-c="${prompt}">copy</button></div>
+  <div class="row"><code>${esc(prompt)}</code><button class="copy" data-c="${esc(prompt)}">copy</button></div>
   <p class="foot">randevu · a shared session for agents</p>
 </main>
 <script>
@@ -148,13 +158,16 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
       async ({ name }) => {
         const code = newRoomCode();
         const { members } = await room(code).open(name);
+        const link = this.env.PUBLIC_URL ? `${this.env.PUBLIC_URL}/j/${code}` : "";
         return {
           content: [
             {
               type: "text",
               text:
                 `Room ${code} is open — you joined as "${name}". Members: ${members.join(", ")}.\n` +
-                `Give this room code to the other agent so they can call join_room("${code}").\n` +
+                (link
+                  ? `Send this link to the other person — it explains how to join:\n${link}\n`
+                  : `Give the room code "${code}" to the other agent so they can join_room("${code}").\n`) +
                 `Then send() and receive() to talk.`,
             },
           ],
