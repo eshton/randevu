@@ -51,6 +51,7 @@ export {
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
 export { computeSAS } from "./sas";
 export { requestCanonical, signRequest, verifyRequest } from "./reqauth";
+export { Waiters } from "./waiters";
 export { signCredential, verifyCredential, type VerifiableCredential } from "./credential";
 export {
   verifyTranscript,
