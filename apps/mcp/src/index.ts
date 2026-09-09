@@ -223,12 +223,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Compose an invitation email pointing the recipient at the join landing page. */
+/** Compose an invitation email that carries the full join steps inline (link is secondary). */
 function invitationEmail(opts: {
   fromName: string;
   purpose: string;
-  joinUrl: string;
   inviteeName: string;
+  connectorUrl: string;
+  roomCode: string;
+  landingUrl: string;
 }): { subject: string; html: string; text: string } {
   const who = opts.fromName.trim() || "Someone";
   const hi = opts.inviteeName.trim() ? `Hi ${opts.inviteeName.trim()},` : "Hi,";
@@ -236,27 +238,45 @@ function invitationEmail(opts: {
   const subject = opts.purpose.trim()
     ? `${who} invited your agent — ${opts.purpose.trim()}`
     : `${who} invited your agent on Randevu`;
+  const cli = `claude mcp add --transport http randevu ${opts.connectorUrl}`;
+  const prompt = `Join the Randevu room ${opts.roomCode} as <your name>, then send a hello and receive.`;
+
   const text = `${hi}
 
 ${who} invited your AI agent to a Randevu session${why}.
 
 Randevu is a shared, real-time room where your agent and theirs talk directly to sort this out. You stay in control — your agent checks with you before anything is decided.
 
-Join here (the page explains exactly how):
-${opts.joinUrl}
+To join, give your agent these two things:
+
+1) Add the connector.
+   Claude Code:   ${cli}
+   Claude Desktop / ChatGPT / other clients: add a custom (remote / HTTP) MCP connector with this URL:
+   ${opts.connectorUrl}
+
+2) Tell your agent:
+   ${prompt}
+
+(Room code: ${opts.roomCode})
+
+Prefer a guided web page? ${opts.landingUrl}
 
 If you don't use an AI agent, you can ignore this.`;
+
   const e = escapeHtml;
   const purposeSpan = opts.purpose.trim()
     ? ` so it can <span style="color:#9a6c14;font-weight:600">&ldquo;${e(opts.purpose.trim())}&rdquo;</span>`
     : "";
-  const preheader = `${who} invited your agent${opts.purpose.trim() ? ` — ${opts.purpose.trim()}` : ""}`;
+  const preheader = `${who} invited your agent${opts.purpose.trim() ? ` — ${opts.purpose.trim()}` : ""} — how to join inside`;
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+  const mono = "Menlo,Consolas,'Courier New',monospace";
+  const box = `background:#f4efe4;border:1px solid #e6ddc9;border-radius:8px;padding:10px 12px;font-family:${mono};font-size:13px;line-height:1.5;color:#3f3a2e;word-break:break-all`;
+  const label = `margin:18px 0 6px 0;font-family:${font};font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a6c14`;
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f6f2e9;">
 <span style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f6f2e9">${e(preheader)}</span>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f2e9;padding:28px 16px;font-family:${font}">
 <tr><td align="center">
-<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#fffdf7;border:1px solid #e0d8c6;border-radius:16px">
+<table role="presentation" width="540" cellpadding="0" cellspacing="0" style="max-width:540px;width:100%;background:#fffdf7;border:1px solid #e0d8c6;border-radius:16px">
 <tr><td style="padding:24px 28px 0 28px">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
 <td width="14" height="14" style="width:14px;height:14px;background:#e0a12f;border-radius:50%;font-size:0;line-height:0">&nbsp;</td>
@@ -266,14 +286,20 @@ If you don't use an AI agent, you can ignore this.`;
 <tr><td style="padding:18px 28px 4px 28px;font-family:${font};color:#201c14">
 <div style="margin:0 0 8px 0;font-size:21px;line-height:1.25;font-weight:700;letter-spacing:-0.02em">${e(hi)}</div>
 <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;color:#3f3a2e"><strong>${e(who)}</strong> invited your AI agent to a Randevu session${purposeSpan}.</p>
-<p style="margin:0 0 22px 0;font-size:15px;line-height:1.6;color:#3f3a2e">Randevu is a shared, real-time room where your agent and theirs talk directly to sort this out. You stay in control — your agent checks with you before anything is decided.</p>
+<p style="margin:0 0 4px 0;font-size:15px;line-height:1.6;color:#3f3a2e">Randevu is a shared, real-time room where your agent and theirs talk directly. You stay in control — your agent checks with you before anything is decided.</p>
+<p style="margin:20px 0 2px 0;font-size:15px;font-weight:600;color:#201c14">To join, give your agent these two things:</p>
+<p style="${label}">1 · Add the connector — Claude Code</p>
+<div style="${box}">${e(cli)}</div>
+<p style="margin:10px 0 6px 0;font-family:${font};font-size:13px;color:#6c6455">Claude Desktop / ChatGPT / other clients — add a custom (remote&nbsp;/&nbsp;HTTP) MCP connector with this URL:</p>
+<div style="${box}">${e(opts.connectorUrl)}</div>
+<p style="${label}">2 · Tell your agent</p>
+<div style="${box}">${e(prompt)}</div>
 </td></tr>
-<tr><td style="padding:0 28px 4px 28px">
+<tr><td style="padding:18px 28px 4px 28px">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td bgcolor="#e0a12f" style="border-radius:10px">
-<a href="${e(opts.joinUrl)}" style="display:inline-block;padding:13px 26px;font-family:${font};font-size:15px;font-weight:600;color:#1a1305;text-decoration:none;border-radius:10px">Join the session &rarr;</a>
+<td style="border:1px solid #d9cfb6;border-radius:10px">
+<a href="${e(opts.landingUrl)}" style="display:inline-block;padding:11px 22px;font-family:${font};font-size:14px;font-weight:600;color:#9a6c14;text-decoration:none;border-radius:10px">Prefer a guided page? Open it &rarr;</a>
 </td></tr></table>
-<p style="margin:12px 0 0 0;font-family:${font};font-size:12px;color:#8a7f6a">The page walks your agent through connecting — works with Claude, ChatGPT, and others.</p>
 </td></tr>
 <tr><td style="padding:18px 28px 24px 28px;border-top:1px solid #efe9db;font-family:${font};color:#8a7f6a;font-size:12px;line-height:1.5">
 It&rsquo;s just your two agents sorting this out. If you don&rsquo;t use an AI agent, you can ignore this.
@@ -461,8 +487,10 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
           const mail = invitationEmail({
             fromName: from_name ?? "",
             purpose: purpose ?? "",
-            joinUrl: link,
             inviteeName: inv.name ?? "",
+            connectorUrl: base ? `${base}/mcp` : "",
+            roomCode: code,
+            landingUrl: link,
           });
           if (this.env.RESEND_API_KEY && this.env.FROM_EMAIL) {
             try {
