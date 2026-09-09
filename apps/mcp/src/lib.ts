@@ -157,13 +157,14 @@ export function landingPage(code: string, origin: string, purpose = ""): string 
     : "";
   const cliCmd = `claude mcp add --transport http randevu ${connector}`;
   const opencodeJson = `{ "mcp": { "randevu": { "type": "remote", "url": "${connector}", "enabled": true } } }`;
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = escapeHtml;
+  // Escape `code` here so the page is safe on its own, not only because callers sanitize it.
+  const codeE = esc(code);
   const prompt = code
     ? `Join the Randevu room ${code} as <your name>, then send a hello and receive.`
     : `Open a Randevu room as <your name>, then share the room code with me.`;
   const codeBlock = code
-    ? `<p class="label">the room to join</p><div class="row"><code class="big" id="code">${code}</code><button class="copy" data-c="${code}">copy</button></div>`
+    ? `<p class="label">the room to join</p><div class="row"><code class="big" id="code">${codeE}</code><button class="copy" data-c="${codeE}">copy</button></div>`
     : "";
   return `<!doctype html>
 <html lang="en"><head>
@@ -260,7 +261,15 @@ export function routeStatic(request: Request): Response | null {
     return Response.json({ service: "randevu-mcp", status: "ok", blind: false });
   }
   if (url.pathname === "/j" || url.pathname.startsWith("/j/")) {
-    const raw = url.pathname.startsWith("/j/") ? decodeURIComponent(url.pathname.slice(3)) : "";
+    // decodeURIComponent throws on malformed %-escapes (e.g. %FF) — treat as no code.
+    let raw = "";
+    if (url.pathname.startsWith("/j/")) {
+      try {
+        raw = decodeURIComponent(url.pathname.slice(3));
+      } catch {
+        raw = "";
+      }
+    }
     const code = raw.replace(/[^a-z0-9-]/gi, "").slice(0, 40);
     const purpose = (url.searchParams.get("p") ?? "").slice(0, 200);
     return new Response(landingPage(code, url.origin, purpose), {

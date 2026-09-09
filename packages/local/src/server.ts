@@ -443,6 +443,9 @@ export class RandevuLocal {
     let joinKind = kind;
     if (/^https?:\/\//i.test(inviteStr)) {
       const jl = parseJoinLink(inviteStr);
+      // Trusting the link's relay origin is safe: the relay only ever sees ciphertext, and
+      // joinSession pins the creator's committed fingerprint (anti-MITM) regardless of which
+      // relay we talk to — a bad origin can't impersonate the creator, only fail to connect.
       if (jl.relayUrl !== this.relay.endpoint) this.relay = this.makeRelay(jl.relayUrl);
       inviteStr = encodeInvite(jl.invite);
       joinKind = kind || jl.kind || "";

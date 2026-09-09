@@ -23,7 +23,13 @@ export interface DispatchResult {
 const MEMBER_ONLY = new Set(["/members", "/messages", "/keys", "/status"]);
 const MAX_SKEW_MS = 300_000;
 
-async function authenticate(session: Session, ctx: DispatchCtx): Promise<boolean> {
+/**
+ * Verify a member's request signature (RDV-32): fresh timestamp within skew, and a
+ * signature over the canonical descriptor that checks against the member's stored
+ * identity key. Exported so the /wait long-poll path authenticates identically — one
+ * definition of skew + canonicalization, no drift.
+ */
+export async function authenticate(session: Session, ctx: DispatchCtx): Promise<boolean> {
   if (!ctx.member || !ctx.timestamp || !ctx.signature) return false;
   const ts = Number(ctx.timestamp);
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > MAX_SKEW_MS) return false;

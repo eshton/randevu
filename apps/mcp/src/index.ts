@@ -228,7 +228,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
             .optional()
             .describe("plain-language reason, e.g. 'find a suitable time for a coffee' — shown to invitees"),
           invites: z
-            .array(z.object({ name: z.string().optional(), email: z.string().optional() }))
+            .array(z.object({ name: z.string().optional(), email: z.string().email().optional() }))
             .optional()
             .describe("people to invite; when an email is given, the hosted service emails them the join link"),
         },

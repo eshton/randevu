@@ -63,7 +63,8 @@ export function encodeJoinLink(relayUrl: string, invite: Invite, kind = ""): str
   // Reduce the relay URL to its origin (scheme://host[:port]); no URL global — core is DOM-free.
   const origin = relayUrl.trim().match(/^(https?:\/\/[^/?#]+)/i)?.[1];
   if (!origin) throw new Error("invalid relay url");
-  // Secrets (fingerprint, token) + kind ride in the fragment — never sent to a server.
+  // The join token (secret) + the fingerprint (public commitment) + kind ride in the
+  // fragment, which browsers never send to a server — so the token stays out of server logs.
   const frag = `${invite.fingerprint}.${invite.joinToken}${kind ? `.${encodeURIComponent(kind)}` : ""}`;
   return `${origin}/j/${invite.sessionId}#${frag}`;
 }
@@ -73,11 +74,18 @@ export function parseJoinLink(link: string): JoinLink {
   const m = link.trim().match(/^(https?:\/\/[^/?#]+)\/j\/([^/?#]+)#(.+)$/i);
   if (!m) throw new Error("malformed join link");
   const relayUrl = m[1]!;
-  const sessionId = decodeURIComponent(m[2]!);
   const parts = m[3]!.split(".");
   const fingerprint = parts[0] ?? "";
   const joinToken = parts[1] ?? "";
-  const kind = parts.length > 2 ? decodeURIComponent(parts.slice(2).join(".")) : undefined;
+  // decodeURIComponent throws on malformed %-escapes — normalize to a single error.
+  let sessionId: string;
+  let kind: string | undefined;
+  try {
+    sessionId = decodeURIComponent(m[2]!);
+    kind = parts.length > 2 ? decodeURIComponent(parts.slice(2).join(".")) : undefined;
+  } catch {
+    throw new Error("malformed join link");
+  }
   if (!sessionId || !fingerprint || !joinToken) throw new Error("malformed join link");
   return { relayUrl, invite: { sessionId, fingerprint, joinToken }, ...(kind ? { kind } : {}) };
 }

@@ -158,6 +158,12 @@ describe("landingPage", () => {
     expect(html).toContain("Open a Randevu room");
     expect(html).not.toContain('id="code"');
   });
+
+  it("escapes the room code itself (self-safe, not reliant on the caller)", () => {
+    const html = landingPage('rdv-"><script>', "https://mcp.randevu.run");
+    expect(html).not.toContain('rdv-"><script>');
+    expect(html).toContain("rdv-&quot;&gt;&lt;script&gt;");
+  });
 });
 
 describe("routeStatic", () => {
@@ -182,6 +188,15 @@ describe("routeStatic", () => {
     // The injected markup is gone; only the sanitized code survives.
     expect(body).not.toContain("alert(1)");
     expect(body).toContain("rdv-abcscriptalert1");
+  });
+
+  it("serves the invite page (no code) for a malformed %-escape instead of throwing", async () => {
+    let res: Response | null = null;
+    expect(() => {
+      res = routeStatic(new Request("https://mcp.randevu.run/j/%FF"));
+    }).not.toThrow();
+    expect(res!.headers.get("content-type")).toContain("text/html");
+    expect(await res!.text()).not.toContain('id="code"');
   });
 
   it("returns null for /mcp so the caller hands off to the transport", () => {

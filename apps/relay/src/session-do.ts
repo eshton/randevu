@@ -1,7 +1,5 @@
-import { requestCanonical, verifyRequest } from "@randevu/core";
-import { hexToBytes } from "@noble/hashes/utils";
 import { Session } from "./session";
-import { dispatchSession } from "./dispatch";
+import { authenticate, dispatchSession } from "./dispatch";
 import type { KvStore } from "./store";
 
 /** Adapts Durable Object storage to the KvStore interface the session logic uses. */
@@ -57,20 +55,29 @@ export class SessionDurableObject implements DurableObject {
     const timestamp = request.headers.get("X-Randevu-Timestamp") ?? undefined;
     const signature = request.headers.get("X-Randevu-Auth") ?? undefined;
 
-    // Long-poll: block until a message after `after` exists, then return it (push-like).
-    if (url.pathname === "/wait" && method === "GET") {
-      return this.handleWait(sessionId, url.searchParams, member, timestamp, signature);
-    }
-
-    const body =
-      method === "GET" || method === "HEAD"
-        ? undefined
-        : await request.json().catch(() => undefined);
-
     try {
+      // Long-poll: block until a message after `after` exists, then return it (push-like).
+      if (url.pathname === "/wait" && method === "GET") {
+        return await this.handleWait(sessionId, url.searchParams, method, member, timestamp, signature);
+      }
+
+      const body =
+        method === "GET" || method === "HEAD"
+          ? undefined
+          : await request.json().catch(() => undefined);
+
       // Serialize handlers so `seq` stays strictly monotonic under concurrency.
       const result = await this.state.blockConcurrencyWhile(() =>
-        dispatchSession(this.session, { sessionId, method, path: url.pathname, params: url.searchParams, body, member, timestamp, signature }),
+        dispatchSession(this.session, {
+          sessionId,
+          method,
+          path: url.pathname,
+          params: url.searchParams,
+          body,
+          member,
+          timestamp,
+          signature,
+        }),
       );
       if (url.pathname === "/messages" && method === "POST" && result.status === 200) this.wake();
       return Response.json(result.body, { status: result.status });
@@ -79,33 +86,25 @@ export class SessionDurableObject implements DurableObject {
     }
   }
 
-  /** Verify a signed request for this member (same scheme as dispatch, for the /wait path). */
-  private async authOk(
-    sessionId: string,
-    member?: string,
-    timestamp?: string,
-    signature?: string,
-  ): Promise<boolean> {
-    if (!member || !timestamp || !signature) return false;
-    const ts = Number(timestamp);
-    if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 300_000) return false;
-    const pub = await this.state.blockConcurrencyWhile(() => this.session.memberIdentityPub(member));
-    if (!pub) return false;
-    return verifyRequest(hexToBytes(pub), requestCanonical("GET", `/sessions/${sessionId}/wait`, timestamp), signature);
-  }
-
   private async handleWait(
     sessionId: string,
     params: URLSearchParams,
+    method: string,
     member?: string,
     timestamp?: string,
     signature?: string,
   ): Promise<Response> {
-    if (!(await this.authOk(sessionId, member, timestamp, signature))) {
-      return Response.json({ error: "unauthenticated" }, { status: 401 });
-    }
-    const after = Number(params.get("after") ?? "0");
-    const timeoutMs = Math.min(55_000, Math.max(1_000, Number(params.get("timeout") ?? "25000")));
+    // Same auth scheme as every other member-only path (RDV-32) — shared, not re-implemented.
+    const ok = await this.state.blockConcurrencyWhile(() =>
+      authenticate(this.session, { sessionId, method, path: "/wait", params, body: undefined, member, timestamp, signature }),
+    );
+    if (!ok) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+    // /wait is a raw HTTP boundary — never trust the query is numeric.
+    const afterRaw = Number(params.get("after") ?? "0");
+    const after = Number.isFinite(afterRaw) ? afterRaw : 0;
+    const timeoutRaw = Number(params.get("timeout") ?? "25000");
+    const timeoutMs = Number.isFinite(timeoutRaw) ? Math.min(55_000, Math.max(1_000, timeoutRaw)) : 25_000;
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       // Short serialized read for the current messages; the wait itself is NOT held under
