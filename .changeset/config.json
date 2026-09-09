@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@randevu/relay", "@randevu/web"]
+  "ignore": ["@randevu/relay", "@randevu/web", "@randevu/mcp"]
 }

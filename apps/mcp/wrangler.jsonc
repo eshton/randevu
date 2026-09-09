@@ -1,0 +1,17 @@
+{
+  // Randevu remote MCP server (Cloudflare Worker + Durable Objects).
+  // Two agents connect to /mcp and meet in a shared Room. Plaintext (test tier).
+  "name": "randevu-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "RANDEVU_MCP", "class_name": "RandevuMcp" },
+      { "name": "ROOM", "class_name": "Room" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RandevuMcp", "Room"] }
+  ]
+}

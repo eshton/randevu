@@ -1,0 +1,22 @@
+{
+  "name": "@randevu/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Randevu remote MCP — a public rendezvous where two agents meet and talk (plaintext test tier).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "agents": "^0.22.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^4.0.0"
+  }
+}
