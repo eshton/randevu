@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   type RoomMessage,
   pauseNote,
-  pickRole,
   roomContext,
   newRoomCode,
   invitationEmail,
@@ -43,21 +42,6 @@ describe("pauseNote", () => {
     const note = pauseNote([msg({ type: "awaiting_human" })]);
     expect(note).toContain("stepped away");
     expect(note).not.toContain("~");
-  });
-});
-
-describe("pickRole", () => {
-  it("assigns the first free role", () => {
-    expect(pickRole(["buyer", "seller"], [])).toBe("buyer");
-    expect(pickRole(["buyer", "seller"], ["buyer"])).toBe("seller");
-  });
-
-  it("falls back to participant when all roles are taken", () => {
-    expect(pickRole(["buyer", "seller"], ["buyer", "seller"])).toBe("participant");
-  });
-
-  it("falls back to participant when there are no defined roles", () => {
-    expect(pickRole([], [])).toBe("participant");
   });
 });
 

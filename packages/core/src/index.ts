@@ -44,6 +44,7 @@ export {
   KINDS,
   rolesForKind,
   roleByOrder,
+  assignRole,
   roomContext,
   listKinds,
   type KindDef,
@@ -51,10 +52,13 @@ export {
 export { didKeyFromEd25519, ed25519FromDidKey } from "./did";
 export { computeSAS } from "./sas";
 export { requestCanonical, signRequest, verifyRequest } from "./reqauth";
-export { Waiters } from "./waiters";
+export { Waiters, longPoll } from "./waiters";
 export { signCredential, verifyCredential, type VerifiableCredential } from "./credential";
 export {
   verifyTranscript,
+  signTranscriptHead,
+  transcriptHeadCanonical,
+  type TranscriptHead,
   type TranscriptBundle,
   type TranscriptMember,
   type TranscriptMessageEntry,

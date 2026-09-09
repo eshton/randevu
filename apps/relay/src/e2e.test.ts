@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { randomBytes, bytesToHex, hexToBytes } from "@noble/hashes/utils";
 import { Session } from "./session";
 import { MemoryKvStore } from "./store";
-import { dispatchSession } from "./dispatch";
+import { authenticate, dispatchSession } from "./dispatch";
 import { RandevuLocal } from "@randevu/local";
-import { verifyTranscript, generateGroupKey, wrapGroupKey } from "@randevu/core";
+import { verifyTranscript, generateGroupKey, wrapGroupKey, Waiters, longPoll } from "@randevu/core";
 import type { FetchLike } from "@randevu/relay-client";
 
 /**
@@ -14,6 +14,8 @@ import type { FetchLike } from "@randevu/relay-client";
  */
 function inMemoryRelay(): FetchLike {
   const sessions = new Map<string, Session>();
+  const waiters = new Map<string, Waiters>();
+  const waitersFor = (id: string) => waiters.get(id) ?? waiters.set(id, new Waiters()).get(id)!;
   return async (url, init) => {
     const u = new URL(url);
     const method = init?.method ?? "GET";
@@ -46,7 +48,26 @@ function inMemoryRelay(): FetchLike {
         result = { status: 404, body: { error: "session_not_found" } };
       } else {
         const path = segs.length > 2 ? `/${segs.slice(2).join("/")}` : "/status";
-        result = await dispatchSession(session, { sessionId, method, path, params: u.searchParams, body, ...auth });
+        if (path === "/wait" && method === "GET") {
+          // Mirror the Durable Object's /wait: same auth, same longPoll, woken on a message POST.
+          const okAuth = await authenticate(session, { sessionId, method, path, params: u.searchParams, body: undefined, ...auth });
+          if (!okAuth) {
+            result = { status: 401, body: { error: "unauthenticated" } };
+          } else {
+            const after = Number(u.searchParams.get("after") ?? "0");
+            const timeoutMs = Math.min(2000, Number(u.searchParams.get("timeout") ?? "1000"));
+            const r = await longPoll(
+              waitersFor(sessionId),
+              timeoutMs,
+              () => session.getMessages(after),
+              () => ({ messages: [], cursor: after }),
+            );
+            result = { status: 200, body: r };
+          }
+        } else {
+          result = await dispatchSession(session, { sessionId, method, path, params: u.searchParams, body, ...auth });
+          if (path === "/messages" && method === "POST" && result.status === 200) waitersFor(sessionId).wakeAll();
+        }
       }
     } else {
       result = { status: 404, body: { error: "not_found" } };
@@ -80,6 +101,35 @@ describe("end-to-end negotiation through the blind relay", () => {
     expect(aliceInbox.map((m) => m.body)).toEqual(["Counter: 17500"]);
     expect(aliceInbox[0]!.verified).toBe(true);
     expect(aliceInbox[0]!.type).toBe("counter");
+  });
+
+  it("delivers via the long-poll /wait push path (waitForMessage)", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.establishGroupKey();
+    await bob.syncGroupKey();
+
+    // Bob blocks on the push path; Alice posts a beat later — the waiter is woken.
+    const waiting = bob.waitForMessage(2000);
+    setTimeout(() => void alice.send("ping while you wait", "message"), 20);
+    const got = await waiting;
+    expect(got.map((m) => m.body)).toEqual(["ping while you wait"]);
+    expect(got[0]!.verified).toBe(true);
+  });
+
+  it("waitForMessage returns empty on timeout when nothing arrives", async () => {
+    const fetch = inMemoryRelay();
+    const alice = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const bob = new RandevuLocal({ relayUrl: "https://relay", fetch });
+    const { invite } = await alice.createSession(2);
+    await bob.joinSession(invite);
+    await alice.establishGroupKey();
+    await bob.syncGroupKey();
+
+    expect(await bob.waitForMessage(200)).toEqual([]);
   });
 
   it("supports a three-party session", async () => {

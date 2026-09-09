@@ -3,6 +3,13 @@ export { RandevuLocal } from "./server";
 export type { RandevuLocalOptions, ReceivedMessage } from "./server";
 export { createMcpServer } from "./mcp";
 export {
+  issueCredential,
+  issueMandate,
+  x402PaymentRequired,
+  type MandateKind,
+  type X402Input,
+} from "./settlement";
+export {
   loadOrCreateKeystore,
   encodeKeystore,
   decodeKeystore,

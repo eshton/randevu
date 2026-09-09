@@ -23,6 +23,11 @@ export class Waiters {
     for (const resolve of pending) resolve();
   }
 
+  /** Number of waiters currently parked (for tests/introspection). */
+  get size(): number {
+    return this.waiters.length;
+  }
+
   /** Resolve on the next `wakeAll()`, or after `timeoutMs`, whichever is first. */
   wait(timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -38,5 +43,28 @@ export class Waiters {
       }, timeoutMs);
       this.waiters.push(entry);
     });
+  }
+}
+
+/**
+ * Long-poll loop shared by both Durable Objects: read; return as soon as there are
+ * messages; otherwise park on `waiters` until a `wakeAll()` or the deadline, then read
+ * again. Returns `onTimeout()` if the deadline passes with nothing. `read` is provided
+ * by the caller (each tier reads its own storage / payload shape), so only the
+ * concurrency mechanics live here — one implementation, not two.
+ */
+export async function longPoll<R extends { messages: readonly unknown[] }>(
+  waiters: Waiters,
+  timeoutMs: number,
+  read: () => Promise<R>,
+  onTimeout: () => R,
+): Promise<R> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const r = await read();
+    if (r.messages.length > 0) return r;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return onTimeout();
+    await waiters.wait(remaining);
   }
 }

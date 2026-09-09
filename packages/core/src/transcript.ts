@@ -1,4 +1,4 @@
-import { hexToBytes, bytesToHex } from "@noble/hashes/utils";
+import { hexToBytes, bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 import {
   verifyMessage,
   messageSigningBytes,
@@ -7,8 +7,40 @@ import {
   type MessageType,
   type SignableEnvelope,
 } from "./message";
-import { fingerprint } from "./crypto";
+import { fingerprint, sign, verify } from "./crypto";
 import { didKeyFromEd25519 } from "./did";
+
+/**
+ * Signed commitment to the transcript's final state. Without it the hash chain proves no
+ * reorder/drop/insert *within* the presented messages, but a relay could still drop the
+ * tail and present a shorter valid chain. Signing (lastSeq, headHash) lets a verifier
+ * detect that truncation: fewer messages than lastSeq, or a different head, fails.
+ */
+export interface TranscriptHead {
+  lastSeq: number;
+  /** Hex of the running chain head after the last message (empty string if no messages). */
+  headHash: string;
+  /** Fingerprint of the member who signed this head. */
+  signer: string;
+  signature: string;
+}
+
+/** Canonical bytes signed for a transcript head. */
+export function transcriptHeadCanonical(sessionId: string, lastSeq: number, headHash: string): string {
+  return `randevu/transcript-head/v1|${sessionId}|${lastSeq}|${headHash}`;
+}
+
+/** Sign a transcript head with a member's Ed25519 identity key. */
+export function signTranscriptHead(
+  sessionId: string,
+  lastSeq: number,
+  headHash: string,
+  signer: string,
+  identityPrivateKey: Uint8Array,
+): TranscriptHead {
+  const signature = bytesToHex(sign(utf8ToBytes(transcriptHeadCanonical(sessionId, lastSeq, headHash)), identityPrivateKey));
+  return { lastSeq, headHash, signer, signature };
+}
 
 export interface TranscriptMember {
   fingerprint: string;
@@ -40,6 +72,8 @@ export interface TranscriptBundle {
   members: TranscriptMember[];
   groupKeys: { epoch: number; key: string }[];
   messages: TranscriptMessageEntry[];
+  /** Optional signed commitment to the final (lastSeq, headHash) — detects tail truncation. */
+  head?: TranscriptHead;
 }
 
 export interface VerifiedTranscriptMessage {
@@ -71,6 +105,12 @@ export interface TranscriptVerification {
   messages: VerifiedTranscriptMessage[];
   /** Signed acceptances, each bound to the exact terms it accepted. */
   agreements: Agreement[];
+  /**
+   * Signed-head check: true if a valid head is present and matches (lastSeq + headHash);
+   * false if a head is present but fails (bad signature, or truncated/altered tail);
+   * undefined if the bundle carries no head (older exports — nothing to check).
+   */
+  headValid?: boolean;
 }
 
 function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -201,5 +241,29 @@ export function verifyTranscript(bundle: TranscriptBundle): TranscriptVerificati
       };
     });
 
-  return { valid, membersValid, messages, agreements };
+  // Signed head: detect tail truncation. Verify the signature against the signer's pinned
+  // key and that the committed (lastSeq, headHash) matches what we actually folded.
+  let headValid: boolean | undefined;
+  if (bundle.head) {
+    const h = bundle.head;
+    const computedHead = head ? bytesToHex(head) : "";
+    const lastSeq = ordered.length ? ordered[ordered.length - 1]!.seq : 0;
+    const signerPub = idByFingerprint.get(h.signer);
+    let sigOk = false;
+    try {
+      sigOk = signerPub
+        ? verify(
+            hexToBytes(h.signature),
+            utf8ToBytes(transcriptHeadCanonical(bundle.sessionId, h.lastSeq, h.headHash)),
+            signerPub,
+          )
+        : false;
+    } catch {
+      sigOk = false;
+    }
+    headValid = sigOk && h.headHash === computedHead && h.lastSeq === lastSeq;
+    if (!headValid) valid = false;
+  }
+
+  return { valid, membersValid, messages, agreements, ...(headValid !== undefined ? { headValid } : {}) };
 }

@@ -2,11 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { KINDS, listKinds, Waiters, VERSION } from "@randevu/core";
+import { KINDS, listKinds, Waiters, longPoll, VERSION, assignRole } from "@randevu/core";
 import {
   type RoomMessage,
   pauseNote,
-  pickRole,
   roomContext,
   newRoomCode,
   invitationEmail,
@@ -45,7 +44,7 @@ async function sendViaResend(
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 140)}`);
 }
 
-// RoomMessage, pauseNote, pickRole, roomContext, newRoomCode, invitationEmail, and
+// RoomMessage, pauseNote, roomContext, newRoomCode, invitationEmail, and
 // landingPage live in ./lib (runtime-free, unit-tested). Room kinds come from @randevu/core.
 
 /**
@@ -103,8 +102,10 @@ export class Room extends DurableObject {
       members.push(name);
       await this.ctx.storage.put("members", members);
     }
+    // Deterministic join-order assignment (shared strategy with the blind tier).
     const roleKeys = KINDS[kind] ? Object.keys(KINDS[kind]!.roles) : Object.keys(customRoles);
-    const assigned = roles[name] ?? (role || pickRole(roleKeys, Object.values(roles)));
+    const order = members.indexOf(name);
+    const assigned = roles[name] ?? (role || assignRole(roleKeys, order));
     roles[name] = assigned;
     await this.ctx.storage.put("roles", roles);
 
@@ -161,14 +162,12 @@ export class Room extends DurableObject {
 
   /** Long-poll: return as soon as a message with seq > after exists, else after timeout. */
   async wait(after: number, timeoutMs: number): Promise<{ messages: RoomMessage[]; cursor: number }> {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      const current = await this.receive(after);
-      if (current.messages.length) return current;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) return { messages: [], cursor: after };
-      await this.waiters.wait(remaining);
-    }
+    return longPoll(
+      this.waiters,
+      timeoutMs,
+      () => this.receive(after),
+      () => ({ messages: [], cursor: after }),
+    );
   }
 }
 
