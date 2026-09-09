@@ -34,10 +34,11 @@ export function parseInvite(input: string): Invite {
   return { sessionId, fingerprint, joinToken };
 }
 
-/** An invite plus the relay endpoint it should be joined against. */
+/** An invite plus the relay endpoint it should be joined against (and optional room kind). */
 export interface JoinLink {
   relayUrl: string;
   invite: Invite;
+  kind?: string;
 }
 
 /**
@@ -49,7 +50,7 @@ export interface JoinLink {
  * is a public anti-MITM commitment. Unlike the bare invite string, a link also
  * carries which relay to talk to, so the counterparty needs no out-of-band config.
  */
-export function encodeJoinLink(relayUrl: string, invite: Invite): string {
+export function encodeJoinLink(relayUrl: string, invite: Invite, kind = ""): string {
   if (!invite.sessionId || /[/?#]/.test(invite.sessionId)) {
     throw new Error("invalid invite field: sessionId");
   }
@@ -62,20 +63,21 @@ export function encodeJoinLink(relayUrl: string, invite: Invite): string {
   // Reduce the relay URL to its origin (scheme://host[:port]); no URL global — core is DOM-free.
   const origin = relayUrl.trim().match(/^(https?:\/\/[^/?#]+)/i)?.[1];
   if (!origin) throw new Error("invalid relay url");
-  return `${origin}/j/${invite.sessionId}#${invite.fingerprint}.${invite.joinToken}`;
+  // Secrets (fingerprint, token) + kind ride in the fragment — never sent to a server.
+  const frag = `${invite.fingerprint}.${invite.joinToken}${kind ? `.${encodeURIComponent(kind)}` : ""}`;
+  return `${origin}/j/${invite.sessionId}#${frag}`;
 }
 
-/** Parse a join link back into its relay endpoint + invite. Throws on malformed input. */
+/** Parse a join link back into its relay endpoint + invite (+ kind). Throws on malformed input. */
 export function parseJoinLink(link: string): JoinLink {
   const m = link.trim().match(/^(https?:\/\/[^/?#]+)\/j\/([^/?#]+)#(.+)$/i);
   if (!m) throw new Error("malformed join link");
   const relayUrl = m[1]!;
   const sessionId = decodeURIComponent(m[2]!);
-  const frag = m[3]!;
-  const dot = frag.indexOf(".");
-  if (dot < 1) throw new Error("malformed join link");
-  const fingerprint = frag.slice(0, dot);
-  const joinToken = frag.slice(dot + 1);
+  const parts = m[3]!.split(".");
+  const fingerprint = parts[0] ?? "";
+  const joinToken = parts[1] ?? "";
+  const kind = parts.length > 2 ? decodeURIComponent(parts.slice(2).join(".")) : undefined;
   if (!sessionId || !fingerprint || !joinToken) throw new Error("malformed join link");
-  return { relayUrl, invite: { sessionId, fingerprint, joinToken } };
+  return { relayUrl, invite: { sessionId, fingerprint, joinToken }, ...(kind ? { kind } : {}) };
 }

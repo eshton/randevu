@@ -54,7 +54,8 @@ export function createMcpServer(local: RandevuLocal): McpServer {
       const r = await local.openRoom(kind ?? "", role ?? "", maxMembers ?? 2);
       return text(
         `Room ready (kind: ${r.kind || "—"}) — your role: ${r.role || "—"}.\n` +
-          `Send this invite to the other party out-of-band:\n${r.invite}\n` +
+          `Share this link with the other party out-of-band (or the raw invite below it):\n` +
+          `${r.link}\n${r.invite}\n` +
           (r.context ? `\n${r.context}` : ""),
       );
     },
@@ -62,10 +63,10 @@ export function createMcpServer(local: RandevuLocal): McpServer {
 
   server.tool(
     "join_room",
-    "Join a session from an invite. Verifies the creator's key fingerprint (anti-MITM). Pass the kind you were told to get your role + context.",
+    "Join a session from an invite string OR a join link (verifies the creator's fingerprint, anti-MITM). A link carries the relay + kind automatically; with a raw invite, pass the kind you were told.",
     {
-      invite: z.string().describe("the invite string from the other party"),
-      kind: z.string().optional().describe("the room kind, as told out-of-band"),
+      invite: z.string().describe("the invite string or join link from the other party"),
+      kind: z.string().optional().describe("the room kind (only needed for a raw invite string)"),
       role: z.string().optional().describe("your role; auto-assigned from the kind if omitted"),
     },
     async ({ invite, kind, role }) => {

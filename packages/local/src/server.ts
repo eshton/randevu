@@ -5,6 +5,8 @@ import {
   fingerprint,
   encodeInvite,
   parseInvite,
+  encodeJoinLink,
+  parseJoinLink,
   generateGroupKey,
   wrapGroupKey,
   unwrapGroupKey,
@@ -83,7 +85,8 @@ export class RandevuLocal {
   private readonly identity: IdentityKeyPair;
   private readonly agreement: AgreementKeyPair;
   readonly memberId: string;
-  private readonly relay: RelayClient;
+  private relay: RelayClient;
+  private readonly fetchImpl?: FetchLike;
 
   sessionId?: string;
   epoch = 0;
@@ -108,10 +111,15 @@ export class RandevuLocal {
     this.identity = options.keys?.identity ?? generateIdentityKeyPair();
     this.agreement = options.keys?.agreement ?? generateAgreementKeyPair();
     this.memberId = fingerprint(this.identity.publicKey);
-    this.relay = new RelayClient({
-      baseUrl: options.relayUrl,
-      fetch: options.fetch,
-      // Sign each request with our identity key so the relay can authenticate us (RDV-32).
+    this.fetchImpl = options.fetch;
+    this.relay = this.makeRelay(options.relayUrl);
+  }
+
+  /** Build a relay client for a base URL, signing each request with our identity key (RDV-32). */
+  private makeRelay(baseUrl: string): RelayClient {
+    return new RelayClient({
+      baseUrl,
+      fetch: this.fetchImpl,
       signer: (canonical) => ({
         member: this.memberId,
         signature: signRequest(this.identity.privateKey, canonical),
@@ -413,40 +421,62 @@ export class RandevuLocal {
     kind = "",
     role = "",
     maxMembers = 2,
-  ): Promise<{ sessionId: string; invite: string; kind: string; role: string; context: string }> {
+  ): Promise<{ sessionId: string; invite: string; link: string; kind: string; role: string; context: string }> {
     const { sessionId, invite } = await this.createSession(maxMembers);
     this.kind = kind;
     this.myRole = role || (kind ? roleByOrder(kind, 0) : "");
-    return { sessionId, invite, kind, role: this.myRole, context: kind ? roomContext(kind, this.myRole) : "" };
+    // A shareable link carrying the relay + kind (secrets stay in the fragment).
+    const link = encodeJoinLink(this.relay.endpoint, parseInvite(invite), this.kind);
+    return { sessionId, invite, link, kind: this.kind, role: this.myRole, context: kind ? roomContext(kind, this.myRole) : "" };
   }
 
-  /** Join a room from an invite (verifies the creator's fingerprint), set kind + your role. */
+  /**
+   * Join a room from an invite string OR a join link (verifies the creator's fingerprint).
+   * A link also carries which relay to use + the kind, so no out-of-band config is needed.
+   */
   async joinRoom(
-    invite: string,
+    inviteOrLink: string,
     kind = "",
     role = "",
   ): Promise<{ sessionId: string; kind: string; role: string; context: string; members: string[] }> {
-    await this.joinSession(invite);
-    this.kind = kind;
-    this.myRole = role || (kind ? roleByOrder(kind, 1) : "");
+    let inviteStr = inviteOrLink.trim();
+    let joinKind = kind;
+    if (/^https?:\/\//i.test(inviteStr)) {
+      const jl = parseJoinLink(inviteStr);
+      if (jl.relayUrl !== this.relay.endpoint) this.relay = this.makeRelay(jl.relayUrl);
+      inviteStr = encodeInvite(jl.invite);
+      joinKind = kind || jl.kind || "";
+    }
+    await this.joinSession(inviteStr);
+    this.kind = joinKind;
+    this.myRole = role || (joinKind ? roleByOrder(joinKind, 1) : "");
     return {
       sessionId: this.requireSession(),
-      kind,
+      kind: joinKind,
       role: this.myRole,
-      context: kind ? roomContext(kind, this.myRole) : "",
+      context: joinKind ? roomContext(joinKind, this.myRole) : "",
       members: [...this.membersById.keys()],
     };
   }
 
-  /** Block (client-side poll) until a message arrives from the other party, or timeout. */
-  async waitForMessage(timeoutMs = 25000, intervalMs = 1500): Promise<ReceivedMessage[]> {
+  /**
+   * Block until a message arrives from the other party, or timeout. Uses the relay's
+   * long-poll (push-like) to avoid busy-polling; falls back to a short sleep if the
+   * relay doesn't support /wait.
+   */
+  async waitForMessage(timeoutMs = 25000): Promise<ReceivedMessage[]> {
+    const sessionId = this.requireSession();
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const msgs = await this.receive();
       if (msgs.length) return msgs;
       const remaining = deadline - Date.now();
       if (remaining <= 0) return [];
-      await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)));
+      try {
+        await this.relay.wait(sessionId, this.fetchedSeq, Math.min(50, Math.ceil(remaining / 1000)));
+      } catch {
+        await new Promise((r) => setTimeout(r, Math.min(1500, remaining)));
+      }
     }
   }
 
