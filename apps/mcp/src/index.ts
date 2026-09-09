@@ -4,11 +4,26 @@ import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
 import kindsConfig from "./kinds.json";
 
+/** Minimal shape of the Cloudflare Email Sending binding. */
+interface EmailSender {
+  send(message: {
+    to: string;
+    from: { email: string; name?: string };
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<unknown>;
+}
+
 export interface Env {
   RANDEVU_MCP: DurableObjectNamespace<RandevuMcp>;
   ROOM: DurableObjectNamespace<Room>;
   /** Public base URL for building shareable /j/<code> invite links (from wrangler vars). */
   PUBLIC_URL?: string;
+  /** Email Sending binding (only sends once a domain is onboarded). */
+  EMAIL?: EmailSender;
+  /** From-address for invitation emails, on an onboarded domain. Unset = don't send. */
+  FROM_EMAIL?: string;
 }
 
 interface RoomMessage {
@@ -194,9 +209,49 @@ function newRoomCode(): string {
   return "rdv-" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Compose an invitation email pointing the recipient at the join landing page. */
+function invitationEmail(opts: {
+  fromName: string;
+  purpose: string;
+  joinUrl: string;
+  inviteeName: string;
+}): { subject: string; html: string; text: string } {
+  const who = opts.fromName.trim() || "Someone";
+  const hi = opts.inviteeName.trim() ? `Hi ${opts.inviteeName.trim()},` : "Hi,";
+  const why = opts.purpose.trim() ? ` so your agent can “${opts.purpose.trim()}”` : "";
+  const subject = opts.purpose.trim()
+    ? `${who} invited your agent — ${opts.purpose.trim()}`
+    : `${who} invited your agent on Randevu`;
+  const text = `${hi}
+
+${who} invited your AI agent to a Randevu session${why}.
+
+Randevu is a shared, real-time room where your agent and theirs talk directly to sort this out. You stay in control — your agent checks with you before anything is decided.
+
+Join here (the page explains exactly how):
+${opts.joinUrl}
+
+If you don't use an AI agent, you can ignore this.`;
+  const e = escapeHtml;
+  const html =
+    `<p>${e(hi)}</p>` +
+    `<p><strong>${e(who)}</strong> invited your AI agent to a Randevu session${e(why)}.</p>` +
+    `<p>Randevu is a shared, real-time room where your agent and theirs talk directly to sort this out. You stay in control — your agent checks with you before anything is decided.</p>` +
+    `<p><a href="${e(opts.joinUrl)}">Join here</a> — the page explains exactly how.</p>` +
+    `<p style="color:#888;font-size:12px">If you don't use an AI agent, you can ignore this.</p>`;
+  return { subject, html, text };
+}
+
 /** Self-explaining onboarding page: connector command + room code + the prompt to paste. */
-function landingPage(code: string, origin: string): string {
+function landingPage(code: string, origin: string, purpose = ""): string {
   const connector = `${origin}/mcp`;
+  const purposeBlock = purpose
+    ? `<p class="sub">You were invited so your agent can <strong>&ldquo;${escapeHtml(purpose)}&rdquo;</strong>.</p>`
+    : "";
   const cliCmd = `claude mcp add --transport http randevu ${connector}`;
   const opencodeJson = `{ "mcp": { "randevu": { "type": "remote", "url": "${connector}", "enabled": true } } }`;
   const esc = (s: string) =>
@@ -238,6 +293,7 @@ function landingPage(code: string, origin: string): string {
   <span class="seal"></span>
   <h1>You've been invited to talk through Randevu</h1>
   <p class="sub">Your AI agent joins a shared session and talks to the other agent. Two steps.</p>
+  ${purposeBlock}
   ${codeBlock}
   <p class="step">1 · Add the connector — pick your agent</p>
   <div class="tabs" role="tablist">
@@ -326,7 +382,7 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
       "open_room",
       {
         description:
-          "Open a new shared session. Optionally set a kind (predefined: negotiation, scheduling, brainstorm — or any custom label) and your role. Returns a shareable invite link + room context.",
+          "Open a new shared session. Optionally set a kind (negotiation, scheduling, brainstorm, … or a custom label), your role, a plain-language purpose, and invites [{name, email}] — when an email is given and sending is configured, the service emails them the join link. Returns a shareable invite link + room context.",
         inputSchema: {
           name: z.string().describe("your display name in the session"),
           kind: z
@@ -342,21 +398,66 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
             .record(z.string())
             .optional()
             .describe("for a custom kind: a map of role name -> guidance for that role"),
+          from_name: z.string().optional().describe("your name, shown in the invitation"),
+          purpose: z
+            .string()
+            .optional()
+            .describe("plain-language reason, e.g. 'find a suitable time for a coffee' — shown to invitees"),
+          invites: z
+            .array(z.object({ name: z.string().optional(), email: z.string().optional() }))
+            .optional()
+            .describe("people to invite; when an email is given, the hosted service emails them the join link"),
         },
       },
-      async ({ name, kind, role, brief, roles }) => {
+      async ({ name, kind, role, brief, roles, from_name, purpose, invites }) => {
         const code = newRoomCode();
         const r = await room(code).open(name, kind ?? "", role ?? "", brief ?? "", roles ?? {});
-        const link = this.env.PUBLIC_URL ? `${this.env.PUBLIC_URL}/j/${code}` : "";
+        const base = this.env.PUBLIC_URL ?? "";
+        const link = base ? `${base}/j/${code}${purpose ? `?p=${encodeURIComponent(purpose)}` : ""}` : "";
+
+        // Invitations: email whoever has an address (if sending is configured), else return the link to forward.
+        const notes: string[] = [];
+        for (const inv of invites ?? []) {
+          if (!inv.email) continue;
+          const mail = invitationEmail({
+            fromName: from_name ?? "",
+            purpose: purpose ?? "",
+            joinUrl: link,
+            inviteeName: inv.name ?? "",
+          });
+          if (this.env.EMAIL && this.env.FROM_EMAIL) {
+            try {
+              await this.env.EMAIL.send({
+                to: inv.email,
+                from: { email: this.env.FROM_EMAIL, name: "Randevu" },
+                subject: mail.subject,
+                html: mail.html,
+                text: mail.text,
+              });
+              notes.push(`emailed the invite to ${inv.email}`);
+            } catch (err) {
+              notes.push(
+                `couldn't email ${inv.email} (${err instanceof Error ? err.message : "error"}) — send them the link yourself`,
+              );
+            }
+          } else {
+            notes.push(`email not configured — send ${inv.email} the link above yourself`);
+          }
+        }
+
+        const inviteLine = link
+          ? `Send this link to the other person — it explains how to join:\n${link}\n`
+          : `Give the room code "${code}" to the other agent so they can join_room("${code}").\n`;
+        const notesLine = notes.length ? `\ninvitations:\n${notes.map((n) => ` - ${n}`).join("\n")}\n` : "";
+
         return {
           content: [
             {
               type: "text",
               text:
                 `Room ${code} is open (kind: ${r.kind}) — you joined as "${name}", role: ${r.role}. Members: ${r.members.join(", ")}.\n` +
-                (link
-                  ? `Send this link to the other person — it explains how to join:\n${link}\n`
-                  : `Give the room code "${code}" to the other agent so they can join_room("${code}").\n`) +
+                inviteLine +
+                notesLine +
                 `\n${roomContext(r.kind, r.role, r.brief, r.roleGuidance)}\n\nThen send() and receive() to talk.`,
             },
           ],
@@ -547,7 +648,8 @@ export default {
     if (url.pathname === "/j" || url.pathname.startsWith("/j/")) {
       const raw = url.pathname.startsWith("/j/") ? decodeURIComponent(url.pathname.slice(3)) : "";
       const code = raw.replace(/[^a-z0-9-]/gi, "").slice(0, 40);
-      return new Response(landingPage(code, url.origin), {
+      const purpose = (url.searchParams.get("p") ?? "").slice(0, 200);
+      return new Response(landingPage(code, url.origin, purpose), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }

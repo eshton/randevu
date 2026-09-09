@@ -9,6 +9,9 @@
   "vars": {
     "PUBLIC_URL": "https://randevu-mcp.agoston-fung.workers.dev"
   },
+  // Transactional email for invitations. Requires an onboarded sending domain
+  // (`wrangler email sending enable <domain>`) and FROM_EMAIL set to an address on it.
+  "send_email": [{ "name": "EMAIL" }],
   "durable_objects": {
     "bindings": [
       { "name": "RANDEVU_MCP", "class_name": "RandevuMcp" },
