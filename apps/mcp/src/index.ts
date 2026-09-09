@@ -27,9 +27,15 @@ interface RoomMessage {
  */
 interface KindDef {
   summary: string;
+  /** What "done" looks like for this kind. */
+  goal: string;
   /** role name -> guidance for that role. Ordered; roles are assigned in this order. */
   roles: Record<string, string>;
+  /** Suggested message `type` tags for this kind. */
+  messageTypes?: string[];
   tips: string[];
+  /** When the agent should stop and check with its human. */
+  escalate?: string;
 }
 
 /** Predefined kinds, loaded from kinds.json (edit + redeploy to tune the prompts). */
@@ -53,8 +59,11 @@ function roomContext(kind: string, role: string, brief: string, roleGuidance: st
     `your role: ${role}`,
   ];
   if (def?.summary) lines.push(`about: ${def.summary}`);
+  if (def?.goal) lines.push(`goal: ${def.goal}`);
   if (roleGuidance) lines.push(`role guidance: ${roleGuidance}`);
+  if (def?.messageTypes?.length) lines.push(`message types: ${def.messageTypes.join(", ")}`);
   if (def?.tips.length) lines.push("tips:\n" + def.tips.map((t) => ` - ${t}`).join("\n"));
+  if (def?.escalate) lines.push(`check with your human before: ${def.escalate}`);
   if (brief) lines.push(`note from the room opener: ${brief}`);
   lines.push("------------------------------------------------------------------------");
   return lines.join("\n");
@@ -464,7 +473,10 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
       },
       async () => {
         const text = Object.entries(KINDS)
-          .map(([k, def]) => `• ${k} — ${def.summary}\n  roles: ${Object.keys(def.roles).join(", ")}`)
+          .map(
+            ([k, def]) =>
+              `• ${k} — ${def.summary}\n  roles: ${Object.keys(def.roles).join(", ")}\n  goal: ${def.goal}`,
+          )
           .join("\n\n");
         return {
           content: [
