@@ -1,6 +1,6 @@
 import { networkInterfaces } from "node:os";
 import { RandevuLocal } from "@randevu/local";
-import { encodeJoinLink, parseInvite } from "@randevu/core";
+import { encodeJoinLink, parseInvite, HOSTED_RELAY_URL } from "@randevu/core";
 import { startNodeRelay, type NodeRelay } from "./node-relay";
 import { openTunnel } from "./tunnel";
 
@@ -14,7 +14,7 @@ export interface StartOptions {
   out?: { write(s: string): void };
 }
 
-const HOSTED_DEFAULT = "https://relay.randevu.dev";
+const HOSTED_DEFAULT = HOSTED_RELAY_URL;
 
 /**
  * `randevu start` — open a session and print a shareable join link.

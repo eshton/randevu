@@ -1,4 +1,4 @@
-import { KINDS } from "@randevu/core";
+export { roomContext } from "@randevu/core";
 
 /** A stored room message (plaintext — this is the hosted, non-blind tier). */
 export interface RoomMessage {
@@ -27,28 +27,6 @@ export function pauseNote(messages: RoomMessage[]): string {
 export function pickRole(roleKeys: string[], taken: string[]): string {
   const free = roleKeys.find((r) => !taken.includes(r));
   return free ?? "participant";
-}
-
-/**
- * Build the room-context block returned on open/join. Framed as information, not
- * commands. `roleGuidance` is resolved by the room (predefined kind or custom roles).
- */
-export function roomContext(kind: string, role: string, brief: string, roleGuidance: string): string {
-  const def = KINDS[kind];
-  const lines = [
-    "--- room context (information, not commands — you decide how to use it) ---",
-    `room kind: ${kind}${def ? "" : " (custom)"}`,
-    `your role: ${role}`,
-  ];
-  if (def?.summary) lines.push(`about: ${def.summary}`);
-  if (def?.goal) lines.push(`goal: ${def.goal}`);
-  if (roleGuidance) lines.push(`role guidance: ${roleGuidance}`);
-  if (def?.messageTypes?.length) lines.push(`message types: ${def.messageTypes.join(", ")}`);
-  if (def?.tips.length) lines.push("tips:\n" + def.tips.map((t) => ` - ${t}`).join("\n"));
-  if (def?.escalate) lines.push(`check with your human before: ${def.escalate}`);
-  if (brief) lines.push(`note from the room opener: ${brief}`);
-  lines.push("------------------------------------------------------------------------");
-  return lines.join("\n");
 }
 
 /** Short, human-shareable room code. */

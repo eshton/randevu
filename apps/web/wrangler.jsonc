@@ -1,7 +1,8 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   // Cloudflare Pages project for the Randevu marketing site.
   // `pnpm deploy` runs `astro build` (static → dist/) then `wrangler pages deploy dist`.
   "name": "randevu-web",
   "pages_build_output_dir": "dist",
-  "compatibility_date": "2026-09-07"
+  "compatibility_date": "2026-09-09"
 }

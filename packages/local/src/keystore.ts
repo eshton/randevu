@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { scrypt } from "@noble/hashes/scrypt";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
@@ -47,8 +47,11 @@ export function encodeKeystore(keys: RandevuKeys, passphrase: string): KeystoreF
   return { v: 1, salt: bytesToHex(salt), nonce: bytesToHex(nonce), ciphertext: bytesToHex(ciphertext) };
 }
 
-/** Decrypt a keystore file. Throws on a wrong passphrase (AEAD tag failure). */
+/** Decrypt a keystore file. Throws on a wrong passphrase (AEAD tag failure) or bad format. */
 export function decodeKeystore(file: KeystoreFile, passphrase: string): RandevuKeys {
+  if (file?.v !== 1 || !file.salt || !file.nonce || !file.ciphertext) {
+    throw new Error("unrecognized keystore format");
+  }
   const key = deriveKey(passphrase, hexToBytes(file.salt));
   const plaintext = xchacha20poly1305(key, hexToBytes(file.nonce)).decrypt(hexToBytes(file.ciphertext));
   const parsed = JSON.parse(bytesToUtf8(plaintext)) as { identity: string; agreement: string };
@@ -73,6 +76,10 @@ export function loadOrCreateKeystore(path: string, passphrase: string): RandevuK
     agreement: generateAgreementKeyPair(),
   };
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(encodeKeystore(keys, passphrase), null, 2)}\n`, { mode: 0o600 });
+  // Write to a temp file then rename, so a crash mid-write can't corrupt the only copy
+  // of a persistent identity (atomic replace).
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(encodeKeystore(keys, passphrase), null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, path);
   return keys;
 }

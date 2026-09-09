@@ -38,4 +38,12 @@ describe("verifiable credential (RDV-29)", () => {
     const vc = signCredential(baseCredential(did), did, id.privateKey);
     expect(verifyCredential(vc, generateIdentityKeyPair().publicKey)).toBe(false);
   });
+
+  it("returns false (not throws) on a malformed jws proof", () => {
+    const pub = generateIdentityKeyPair().publicKey;
+    expect(verifyCredential({ proof: { jws: "not.valid.base64!!!" } }, pub)).toBe(false);
+    expect(verifyCredential({ proof: { jws: "onlyonepart" } }, pub)).toBe(false);
+    expect(verifyCredential({ proof: {} }, pub)).toBe(false);
+    expect(verifyCredential({}, pub)).toBe(false);
+  });
 });

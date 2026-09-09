@@ -26,11 +26,17 @@ export class Waiters {
   /** Resolve on the next `wakeAll()`, or after `timeoutMs`, whichever is first. */
   wait(timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, timeoutMs);
-      this.waiters.push(() => {
+      const entry = () => {
         clearTimeout(timer);
         resolve();
-      });
+      };
+      const timer = setTimeout(() => {
+        // Deregister on timeout so a rarely-woken set doesn't accumulate stale closures.
+        const i = this.waiters.indexOf(entry);
+        if (i !== -1) this.waiters.splice(i, 1);
+        resolve();
+      }, timeoutMs);
+      this.waiters.push(entry);
     });
   }
 }

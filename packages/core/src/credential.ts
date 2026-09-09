@@ -52,7 +52,11 @@ export function verifyCredential(vc: VerifiableCredential, issuerPublicKey: Uint
 
   const credential: Record<string, unknown> = { ...vc };
   delete credential["proof"];
-  if (bytesToUtf8(base64urlnopad.decode(p)) !== jcs(credential)) return false;
-
-  return verify(base64urlnopad.decode(s), utf8ToBytes(`${h}.${p}`), issuerPublicKey);
+  // Attacker-controlled base64url payload/signature: malformed input fails closed, not throws.
+  try {
+    if (bytesToUtf8(base64urlnopad.decode(p)) !== jcs(credential)) return false;
+    return verify(base64urlnopad.decode(s), utf8ToBytes(`${h}.${p}`), issuerPublicKey);
+  } catch {
+    return false;
+  }
 }

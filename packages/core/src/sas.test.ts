@@ -19,4 +19,10 @@ describe("computeSAS (RDV-17)", () => {
   it("differs for a different session id", () => {
     expect(computeSAS("rdv_x", [a, b])).not.toBe(computeSAS("rdv_y", [a, b]));
   });
+
+  it("clamps digits to [1,9] so the modulus can't exceed the entropy", () => {
+    expect(computeSAS(sid, [a, b], 4)).toMatch(/^\d{4}$/);
+    expect(computeSAS(sid, [a, b], 99)).toMatch(/^\d{9}$/); // clamped to 9, not 99 chars
+    expect(computeSAS(sid, [a, b], 0)).toMatch(/^\d{1}$/); // clamped up to 1
+  });
 });

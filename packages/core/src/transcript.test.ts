@@ -85,4 +85,19 @@ describe("verifyTranscript", () => {
     expect(v.membersValid).toBe(false);
     expect(v.valid).toBe(false);
   });
+
+  it("returns invalid (not throws) on malformed hex fields", () => {
+    const b = buildBundle();
+    b.messages[0]!.ciphertext = "zz-not-hex";
+    let v!: ReturnType<typeof verifyTranscript>;
+    expect(() => {
+      v = verifyTranscript(b);
+    }).not.toThrow();
+    expect(v.valid).toBe(false);
+  });
+
+  it("returns invalid (not throws) on a corrupt/empty bundle", () => {
+    expect(() => verifyTranscript({} as TranscriptBundle)).not.toThrow();
+    expect(verifyTranscript({} as TranscriptBundle).valid).toBe(false);
+  });
 });

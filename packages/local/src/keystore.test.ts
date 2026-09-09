@@ -23,6 +23,13 @@ describe("keystore (RDV-8)", () => {
     expect(() => decodeKeystore(file, "wrong")).toThrow();
   });
 
+  it("rejects an unrecognized keystore format", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => decodeKeystore({ v: 2 } as any, "pw")).toThrow(/unrecognized keystore format/);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => decodeKeystore({} as any, "pw")).toThrow(/unrecognized keystore format/);
+  });
+
   it("persists a stable identity across loads", () => {
     const path = join(tmpdir(), `rdv-keystore-${bytesToHex(randomBytes(6))}.json`);
     try {

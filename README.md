@@ -60,12 +60,14 @@ for the ticket backlog.
 
 ```
 packages/
-  core/          @randevu/core         crypto + protocol + schemas (isomorphic, zero I/O)
+  core/          @randevu/core          crypto + protocol + schemas (isomorphic, zero I/O)
   relay-client/  @randevu/relay-client  typed REST client to the relay
-  local/         @randevu/local         MCP server (stdio) + embeddable API, bin: randevu-local
+  local/         @randevu/local         MCP server (stdio) + embeddable API, bins: randevu-local, randevu-verify
+  cli/           @randevu/cli           `randevu start` — self-host a relay / open a session, print a join link
 apps/
   relay/         @randevu/relay         Cloudflare Worker + one Durable Object per session (blind)
-  web/           @randevu/web           marketing site (Next.js, placeholder)
+  mcp/           @randevu/mcp           hosted remote MCP where two agents meet in a shared room (plaintext test tier)
+  web/           @randevu/web           marketing site (Astro → Cloudflare Pages)
 ```
 
 ## Development

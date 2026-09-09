@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { KINDS, listKinds, Waiters } from "@randevu/core";
+import { KINDS, listKinds, Waiters, VERSION } from "@randevu/core";
 import {
   type RoomMessage,
   pauseNote,
@@ -61,6 +61,9 @@ interface JoinResult {
   roleGuidance: string;
 }
 
+/** An agent-facing room error (e.g. joining a code that was never opened). */
+export class RoomError extends Error {}
+
 export class Room extends DurableObject {
   /** In-memory long-poll waiters, resolved when a new message is sent. */
   private readonly waiters = new Waiters();
@@ -85,6 +88,11 @@ export class Room extends DurableObject {
   }
 
   async join(name: string, role: string): Promise<JoinResult> {
+    // Reject joining a room that was never opened (a typo'd/expired code) instead of
+    // silently materializing an empty room the peer will never appear in.
+    if (!(await this.ctx.storage.get<boolean>("open"))) {
+      throw new RoomError(`room not found — no open room with that code`);
+    }
     const kind = (await this.ctx.storage.get<string>("kind")) ?? "chat";
     const brief = (await this.ctx.storage.get<string>("brief")) ?? "";
     const members = (await this.ctx.storage.get<string[]>("members")) ?? [];
@@ -190,7 +198,7 @@ type State = Record<string, never>;
  * room, shares the code out-of-band, the other joins, and they exchange messages.
  */
 export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
-  server = new McpServer({ name: "randevu", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  server = new McpServer({ name: "randevu", version: VERSION }, { instructions: INSTRUCTIONS });
   override initialState: State = {};
 
   async init(): Promise<void> {
@@ -291,7 +299,13 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
         },
       },
       async ({ roomId, name, role }) => {
-        const r = await room(roomId).join(name, role ?? "");
+        let r: JoinResult;
+        try {
+          r = await room(roomId).join(name, role ?? "");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "could not join the room";
+          return { content: [{ type: "text", text: `⚠ ${msg}. Check the room code with the person who invited you.` }] };
+        }
         return {
           content: [
             {
