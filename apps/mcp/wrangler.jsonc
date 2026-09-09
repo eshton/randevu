@@ -12,6 +12,7 @@
     "PUBLIC_URL": "https://mcp.randevu.run",
     "FROM_EMAIL": "invites@send.randevu.run"
   },
+  "observability": { "enabled": true },
   "durable_objects": {
     "bindings": [
       { "name": "RANDEVU_MCP", "class_name": "RandevuMcp" },

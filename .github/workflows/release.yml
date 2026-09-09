@@ -1,0 +1,48 @@
+name: Release
+
+# Publishes the public npm packages (core, relay-client, local, cli) via Changesets.
+# On a push to main: if changeset files are present, opens/updates a "Version Packages"
+# PR; when that PR merges (versions bumped, changesets consumed) it publishes to npm.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: version · publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -s build
+
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          # `changeset publish` builds already ran above; just version + publish.
+          version: pnpm changeset version
+          publish: pnpm changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

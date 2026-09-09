@@ -155,4 +155,13 @@ export class RelayClient {
       lastSeq: number;
     }>("GET", `/sessions/${sessionId}/status`);
   }
+
+  /** Long-poll: resolves when a message with seq > afterSeq exists, or after the timeout. */
+  wait(sessionId: string, afterSeq: number, timeoutSec = 25) {
+    const ms = Math.round(timeoutSec) * 1000;
+    return this.request<{ messages: MessageDTO[]; cursor: number }>(
+      "GET",
+      `/sessions/${sessionId}/wait?after=${afterSeq}&timeout=${ms}`,
+    );
+  }
 }

@@ -1,0 +1,52 @@
+name: Deploy
+
+# Deploys the Cloudflare surfaces on a push to main: the hosted MCP Worker, the blind
+# relay Worker, and the Astro marketing site (Pages). Opt-in: set the repo variable
+# DEPLOY_ENABLED=true and the secrets CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.
+# Runs only after CI is green (see ci.yml).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: mcp · relay · web
+    runs-on: ubuntu-latest
+    # Gate on the opt-in flag and, for the automatic trigger, a green CI run.
+    if: >
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -s build
+
+      - name: Deploy hosted MCP Worker
+        run: pnpm --filter @randevu/mcp deploy
+
+      - name: Deploy blind relay Worker
+        run: pnpm --filter @randevu/relay deploy
+
+      - name: Deploy marketing site (Pages)
+        run: pnpm --filter @randevu/web exec wrangler pages deploy dist --project-name randevu-web --branch main
