@@ -74,6 +74,15 @@ interface JoinResult {
 }
 
 export class Room extends DurableObject {
+  /** In-memory long-poll waiters, resolved when a new message is sent. */
+  private waiters: Array<() => void> = [];
+
+  private wake(): void {
+    const pending = this.waiters;
+    this.waiters = [];
+    for (const resolve of pending) resolve();
+  }
+
   async open(
     name: string,
     kind: string,
@@ -123,6 +132,7 @@ export class Room extends DurableObject {
       ...(type ? { type } : {}),
       ts: Date.now(),
     });
+    this.wake(); // release any long-poll waiters
     return { seq };
   }
 
@@ -133,6 +143,24 @@ export class Room extends DurableObject {
       .sort((a, b) => a.seq - b.seq);
     const cursor = messages.length ? messages[messages.length - 1]!.seq : after;
     return { messages, cursor };
+  }
+
+  /** Long-poll: return as soon as a message with seq > after exists, else after timeout. */
+  async wait(after: number, timeoutMs: number): Promise<{ messages: RoomMessage[]; cursor: number }> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const current = await this.receive(after);
+      if (current.messages.length) return current;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return { messages: [], cursor: after };
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, remaining);
+        this.waiters.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
   }
 }
 
@@ -353,6 +381,30 @@ export class RandevuMcp extends McpAgent<Env, State, Record<string, never>> {
         const body = messages.length
           ? messages.map((m) => `#${m.seq} ${m.from}${m.type ? ` (${m.type})` : ""}: ${m.text}`).join("\n")
           : "(no new messages)";
+        return { content: [{ type: "text", text: `${body}\n\ncursor: ${cursor}` }] };
+      },
+    );
+
+    this.server.registerTool(
+      "wait_for_message",
+      {
+        description:
+          "Block until a new message arrives after the cursor (or until timeout). Returns immediately if one is already waiting. Call again with the returned cursor to keep listening — this is the low-latency alternative to polling receive().",
+        inputSchema: {
+          roomId: z.string(),
+          after: z.number().default(0).describe("last cursor you saw; 0 for all"),
+          timeout_seconds: z
+            .number()
+            .default(25)
+            .describe("how long to wait before returning empty (1–55)"),
+        },
+      },
+      async ({ roomId, after, timeout_seconds }) => {
+        const ms = Math.max(1, Math.min(55, timeout_seconds)) * 1000;
+        const { messages, cursor } = await room(roomId).wait(after, ms);
+        const body = messages.length
+          ? messages.map((m) => `#${m.seq} ${m.from}${m.type ? ` (${m.type})` : ""}: ${m.text}`).join("\n")
+          : "(timed out — no new messages; call wait_for_message again with this cursor to keep listening)";
         return { content: [{ type: "text", text: `${body}\n\ncursor: ${cursor}` }] };
       },
     );
