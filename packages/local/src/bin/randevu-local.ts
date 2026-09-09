@@ -5,7 +5,8 @@ import { createMcpServer } from "../mcp";
 import { loadOrCreateKeystore } from "../keystore";
 import { LOCAL_VERSION } from "../version";
 
-const relayUrl = process.env.RANDEVU_RELAY_URL ?? "https://relay.randevu.dev";
+// Default to the deployed blind relay; override with RANDEVU_RELAY_URL (e.g. your self-host).
+const relayUrl = process.env.RANDEVU_RELAY_URL ?? "https://randevu-relay.agoston-fung.workers.dev";
 const keystorePath = process.env.RANDEVU_KEYSTORE;
 const passphrase = process.env.RANDEVU_PASSPHRASE;
 
