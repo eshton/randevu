@@ -8,8 +8,12 @@ export interface KvStore {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<void>;
-  /** Return all entries whose key starts with `prefix`, sorted by key ascending. */
-  list<T>(prefix: string): Promise<Map<string, T>>;
+  /**
+   * Return all entries whose key starts with `prefix`, sorted by key ascending.
+   * `opts.start` (inclusive) skips ahead within the prefix — a range read, so a
+   * poll for messages after a cursor need not scan the whole history.
+   */
+  list<T>(prefix: string, opts?: { start?: string }): Promise<Map<string, T>>;
 }
 
 /**
@@ -33,10 +37,13 @@ export class MemoryKvStore implements KvStore {
     this.map.delete(key);
   }
 
-  async list<T>(prefix: string): Promise<Map<string, T>> {
+  async list<T>(prefix: string, opts?: { start?: string }): Promise<Map<string, T>> {
     const out = new Map<string, T>();
+    const start = opts?.start;
     for (const key of [...this.map.keys()].sort()) {
-      if (key.startsWith(prefix)) out.set(key, structuredClone(this.map.get(key)) as T);
+      if (!key.startsWith(prefix)) continue;
+      if (start !== undefined && key < start) continue;
+      out.set(key, structuredClone(this.map.get(key)) as T);
     }
     return out;
   }

@@ -5,6 +5,7 @@ import {
   fingerprint,
   encodeInvite,
   parseInvite,
+  type Invite,
   encodeJoinLink,
   parseJoinLink,
   generateGroupKey,
@@ -144,18 +145,20 @@ export class RandevuLocal {
     for (const m of members) this.membersById.set(m.fingerprint, m);
   }
 
-  /** Create a session; returns the id and the out-of-band invite string. */
-  async createSession(maxMembers: number): Promise<{ sessionId: string; invite: string }> {
+  /** Create a session; returns the id, the out-of-band invite string, and its structured form. */
+  async createSession(
+    maxMembers: number,
+  ): Promise<{ sessionId: string; invite: string; inviteObj: Invite }> {
     const res = await this.relay.createSession({ maxMembers, creator: this.selfDTO() });
     this.sessionId = res.sessionId;
     this.role = "creator";
     this.cache([this.selfDTO()]);
-    const invite = encodeInvite({
+    const inviteObj: Invite = {
       sessionId: res.sessionId,
       fingerprint: this.memberId,
       joinToken: res.joinToken,
-    });
-    return { sessionId: res.sessionId, invite };
+    };
+    return { sessionId: res.sessionId, invite: encodeInvite(inviteObj), inviteObj };
   }
 
   /** Join a session from an invite, verifying the creator's key against the invite fingerprint. */
@@ -422,11 +425,11 @@ export class RandevuLocal {
     role = "",
     maxMembers = 2,
   ): Promise<{ sessionId: string; invite: string; link: string; kind: string; role: string; context: string }> {
-    const { sessionId, invite } = await this.createSession(maxMembers);
+    const { sessionId, invite, inviteObj } = await this.createSession(maxMembers);
     this.kind = kind;
     this.myRole = role || (kind ? roleByOrder(kind, 0) : "");
     // A shareable link carrying the relay + kind (secrets stay in the fragment).
-    const link = encodeJoinLink(this.relay.endpoint, parseInvite(invite), this.kind);
+    const link = encodeJoinLink(this.relay.endpoint, inviteObj, this.kind);
     return { sessionId, invite, link, kind: this.kind, role: this.myRole, context: kind ? roomContext(kind, this.myRole) : "" };
   }
 

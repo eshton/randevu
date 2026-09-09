@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
-import { KINDS, listKinds } from "@randevu/core";
+import { KINDS, listKinds, Waiters } from "@randevu/core";
 import {
   type RoomMessage,
   pauseNote,
@@ -63,13 +63,7 @@ interface JoinResult {
 
 export class Room extends DurableObject {
   /** In-memory long-poll waiters, resolved when a new message is sent. */
-  private waiters: Array<() => void> = [];
-
-  private wake(): void {
-    const pending = this.waiters;
-    this.waiters = [];
-    for (const resolve of pending) resolve();
-  }
+  private readonly waiters = new Waiters();
 
   async open(
     name: string,
@@ -121,12 +115,18 @@ export class Room extends DurableObject {
       ...(retryAfter !== undefined ? { retryAfter } : {}),
       ts: Date.now(),
     });
-    this.wake(); // release any long-poll waiters
+    this.waiters.wakeAll(); // release any long-poll waiters
     return { seq };
   }
 
   async receive(after: number): Promise<{ messages: RoomMessage[]; cursor: number }> {
-    const map = await this.ctx.storage.list<RoomMessage>({ prefix: "msg:" });
+    // Range read: start just past the cursor so a poll scans only new messages, not all
+    // history. Message keys (`msg:` + zero-padded seq) sort lexicographically by seq.
+    const start = after > 0 ? `msg:${String(after + 1).padStart(9, "0")}` : undefined;
+    const map = await this.ctx.storage.list<RoomMessage>({
+      prefix: "msg:",
+      ...(start ? { start } : {}),
+    });
     const messages = [...map.values()]
       .filter((m) => m.seq > after)
       .sort((a, b) => a.seq - b.seq);
@@ -159,13 +159,7 @@ export class Room extends DurableObject {
       if (current.messages.length) return current;
       const remaining = deadline - Date.now();
       if (remaining <= 0) return { messages: [], cursor: after };
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, remaining);
-        this.waiters.push(() => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
+      await this.waiters.wait(remaining);
     }
   }
 }

@@ -183,7 +183,10 @@ export class Session {
   /** RDV-7: poll for messages after a cursor. */
   async getMessages(afterSeq = 0): Promise<{ messages: StoredMessage[]; cursor: number }> {
     await this.meta();
-    const map = await this.store.list<StoredMessage>("msg:");
+    // Range read: start at the first key strictly after the cursor, so a poll costs
+    // O(new messages), not O(whole history). Keys are lexicographically ordered by seq.
+    const start = afterSeq > 0 ? KEY.msg(afterSeq + 1) : undefined;
+    const map = await this.store.list<StoredMessage>("msg:", start ? { start } : undefined);
     const messages = [...map.values()].filter((m) => m.seq > afterSeq).sort((a, b) => a.seq - b.seq);
     const cursor = messages.length ? messages[messages.length - 1]!.seq : afterSeq;
     return { messages, cursor };

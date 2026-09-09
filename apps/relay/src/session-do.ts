@@ -1,3 +1,4 @@
+import { Waiters } from "@randevu/core";
 import { Session } from "./session";
 import { authenticate, dispatchSession } from "./dispatch";
 import type { KvStore } from "./store";
@@ -18,8 +19,8 @@ class DurableKvStore implements KvStore {
     await this.storage.delete(key);
   }
 
-  list<T>(prefix: string): Promise<Map<string, T>> {
-    return this.storage.list<T>({ prefix });
+  list<T>(prefix: string, opts?: { start?: string }): Promise<Map<string, T>> {
+    return this.storage.list<T>({ prefix, ...(opts?.start !== undefined ? { start: opts.start } : {}) });
   }
 }
 
@@ -32,19 +33,13 @@ class DurableKvStore implements KvStore {
 export class SessionDurableObject implements DurableObject {
   private readonly session: Session;
   /** In-memory long-poll waiters, released when a new message is posted. */
-  private waiters: Array<() => void> = [];
+  private readonly waiters = new Waiters();
 
   constructor(
     private readonly state: DurableObjectState,
     _env: unknown,
   ) {
     this.session = new Session(new DurableKvStore(this.state.storage));
-  }
-
-  private wake(): void {
-    const pending = this.waiters;
-    this.waiters = [];
-    for (const resolve of pending) resolve();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -79,7 +74,7 @@ export class SessionDurableObject implements DurableObject {
           signature,
         }),
       );
-      if (url.pathname === "/messages" && method === "POST" && result.status === 200) this.wake();
+      if (url.pathname === "/messages" && method === "POST" && result.status === 200) this.waiters.wakeAll();
       return Response.json(result.body, { status: result.status });
     } catch {
       return Response.json({ error: "internal_error" }, { status: 500 });
@@ -113,13 +108,7 @@ export class SessionDurableObject implements DurableObject {
       if (res.messages.length) return Response.json(res, { status: 200 });
       const remaining = deadline - Date.now();
       if (remaining <= 0) return Response.json({ messages: [], cursor: after }, { status: 200 });
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, remaining);
-        this.waiters.push(() => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
+      await this.waiters.wait(remaining);
     }
   }
 }
