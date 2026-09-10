@@ -49,4 +49,20 @@ describe("join link", () => {
   it("leaves the bare invite string working", () => {
     expect(parseInvite(encodeInvite(invite))).toEqual(invite);
   });
+
+  it("encodeInvite rejects a field containing the ':' delimiter or an empty field", () => {
+    expect(() => encodeInvite({ ...invite, fingerprint: "9c:1f" })).toThrow(/invalid invite field/);
+    expect(() => encodeInvite({ ...invite, joinToken: "" })).toThrow(/invalid invite field/);
+  });
+
+  it("parseInvite rejects a malformed invite string", () => {
+    expect(() => parseInvite("nope")).toThrow(/malformed invite/);
+    expect(() => parseInvite("randevu:only:three")).toThrow(/malformed invite/);
+    expect(() => parseInvite("wrongprefix:a:b:c")).toThrow(/malformed invite/);
+  });
+
+  it("encodeJoinLink rejects an invalid relay url or invite field", () => {
+    expect(() => encodeJoinLink("ftp://relay", invite)).toThrow(/invalid relay url/);
+    expect(() => encodeJoinLink("https://r", { ...invite, fingerprint: "a.b" })).toThrow(/invalid invite field/);
+  });
 });
