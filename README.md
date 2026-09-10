@@ -78,6 +78,7 @@ Requires Node ≥22 and pnpm.
 pnpm install        # install workspace
 pnpm build          # build all packages (turbo)
 pnpm test           # run vitest across packages
+pnpm coverage       # vitest with v8 line/branch coverage (per package)
 pnpm typecheck      # tsc --noEmit across packages
 pnpm dev            # watch/dev across packages
 ```

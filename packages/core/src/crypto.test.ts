@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { bytesToHex } from "@noble/hashes/utils";
 import {
   generateIdentityKeyPair,
   generateAgreementKeyPair,
+  identityKeyPairFromPrivate,
+  agreementKeyPairFromPrivate,
   sign,
   verify,
   fingerprint,
@@ -35,5 +38,23 @@ describe("@randevu/core crypto", () => {
     const fp = fingerprint(kp.publicKey);
     expect(fp).toBe(fingerprint(kp.publicKey));
     expect(fp).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("fingerprint length is configurable", () => {
+    const kp = generateIdentityKeyPair();
+    expect(fingerprint(kp.publicKey, 8)).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("reconstructs both keypairs from a stored private key (RDV-8)", () => {
+    const id = generateIdentityKeyPair();
+    const kx = generateAgreementKeyPair();
+    expect(bytesToHex(identityKeyPairFromPrivate(id.privateKey).publicKey)).toBe(bytesToHex(id.publicKey));
+    expect(bytesToHex(agreementKeyPairFromPrivate(kx.privateKey).publicKey)).toBe(bytesToHex(kx.publicKey));
+  });
+
+  it("verify returns false (not throws) on a malformed signature", () => {
+    const kp = generateIdentityKeyPair();
+    const msg = new TextEncoder().encode("x");
+    expect(verify(new Uint8Array(10), msg, kp.publicKey)).toBe(false); // wrong-length sig
   });
 });
