@@ -23,12 +23,6 @@ export function pauseNote(messages: RoomMessage[]): string {
   );
 }
 
-/** Assign the next unused role from a role list, else a generic participant. */
-export function pickRole(roleKeys: string[], taken: string[]): string {
-  const free = roleKeys.find((r) => !taken.includes(r));
-  return free ?? "participant";
-}
-
 /** Short, human-shareable room code. */
 export function newRoomCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(5));

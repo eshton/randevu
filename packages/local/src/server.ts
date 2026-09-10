@@ -22,7 +22,7 @@ import {
   chainHash,
   computeSAS,
   signRequest,
-  signCredential,
+  signTranscriptHead,
   didKeyFromEd25519,
   roomContext,
   roleByOrder,
@@ -34,6 +34,13 @@ import {
   type VerifiableCredential,
 } from "@randevu/core";
 import { RelayClient, RelayError, type FetchLike, type MemberDTO, type MessageDTO } from "@randevu/relay-client";
+import {
+  issueCredential,
+  issueMandate,
+  x402PaymentRequired,
+  type MandateKind,
+  type X402Input,
+} from "./settlement";
 
 /** Nullable byte-array equality (both null counts as equal). */
 function bytesEqualNullable(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -536,6 +543,7 @@ export class RandevuLocal {
   async exportTranscript(): Promise<TranscriptBundle> {
     const sessionId = this.requireSession();
     await this.pull();
+    const headHash = this.head ? bytesToHex(this.head) : "";
     return {
       version: "randevu-transcript/v1",
       sessionId,
@@ -558,6 +566,8 @@ export class RandevuLocal {
           ref: e.dto.ref,
           signature: e.dto.signature,
         })),
+      // Sign the final (lastSeq, headHash) so a dropped tail is detectable offline.
+      head: signTranscriptHead(sessionId, this.fetchedSeq, headHash, this.memberId, this.identity.privateKey),
     };
   }
 
@@ -582,65 +592,24 @@ export class RandevuLocal {
    * VC-JOSE / ANP / AP2 tooling.
    */
   issueCredential(credentialSubject: Record<string, unknown>): VerifiableCredential {
-    return signCredential(
-      {
-        "@context": ["https://www.w3.org/2018/credentials/v1"],
-        type: ["VerifiableCredential", "RandevuAgreement"],
-        issuer: this.did,
-        credentialSubject: { ...credentialSubject, sessionId: this.sessionId ?? null },
-      },
-      this.did,
-      this.identity.privateKey,
-    );
+    return issueCredential(this.did, this.identity.privateKey, credentialSubject, this.sessionId ?? null);
   }
 
   /**
    * Emit a concluded deal as an AP2 payment Mandate (Intent / Cart / Payment) — a signed
    * Verifiable Credential (RDV-31). Randevu never touches funds; it produces the signed
-   * artifact a payment layer (AP2) consumes. Shape-compatible with AP2's three-mandate model;
-   * confirm field names against the current AP2 spec before production.
+   * artifact a payment layer (AP2) consumes.
    */
-  issueMandate(kind: "intent" | "cart" | "payment", subject: Record<string, unknown>): VerifiableCredential {
-    const mandateType = { intent: "IntentMandate", cart: "CartMandate", payment: "PaymentMandate" }[kind];
-    return signCredential(
-      {
-        "@context": ["https://www.w3.org/2018/credentials/v1", "https://ap2-protocol.org/context/v1"],
-        type: ["VerifiableCredential", mandateType],
-        issuer: this.did,
-        credentialSubject: { ...subject, sessionId: this.sessionId ?? null },
-      },
-      this.did,
-      this.identity.privateKey,
-    );
+  issueMandate(kind: MandateKind, subject: Record<string, unknown>): VerifiableCredential {
+    return issueMandate(this.did, this.identity.privateKey, kind, subject, this.sessionId ?? null);
   }
 
   /**
-   * Build an x402 "402 Payment Required" descriptor for a concluded deal (RDV-31). This is
-   * the resource-server ask; the actual on-chain payment authorization is the payment rail's
-   * job. Shape-compatible with x402; confirm against the current x402 spec before production.
+   * Build an x402 "402 Payment Required" descriptor for a concluded deal (RDV-31). The
+   * resource-server ask; the on-chain payment authorization is the payment rail's job.
    */
-  x402PaymentRequired(input: {
-    amount: string;
-    asset: string;
-    network: string;
-    payTo: string;
-    resource: string;
-    description?: string;
-  }): Record<string, unknown> {
-    return {
-      x402Version: 1,
-      accepts: [
-        {
-          scheme: "exact",
-          network: input.network,
-          maxAmountRequired: input.amount,
-          asset: input.asset,
-          payTo: input.payTo,
-          resource: input.resource,
-          description: input.description ?? "Randevu settled agreement",
-        },
-      ],
-    };
+  x402PaymentRequired(input: X402Input): Record<string, unknown> {
+    return x402PaymentRequired(input);
   }
 
   private requireSession(): string {

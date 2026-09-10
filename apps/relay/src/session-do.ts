@@ -1,4 +1,4 @@
-import { Waiters } from "@randevu/core";
+import { Waiters, longPoll } from "@randevu/core";
 import { Session } from "./session";
 import { authenticate, dispatchSession } from "./dispatch";
 import type { KvStore } from "./store";
@@ -102,15 +102,14 @@ export class SessionDurableObject implements DurableObject {
     const after = Number.isFinite(afterRaw) ? afterRaw : 0;
     const timeoutRaw = Number(params.get("timeout") ?? "25000");
     const timeoutMs = Number.isFinite(timeoutRaw) ? Math.min(55_000, Math.max(1_000, timeoutRaw)) : 25_000;
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      // Short serialized read for the current messages; the wait itself is NOT held under
-      // blockConcurrencyWhile, so a concurrent postMessage can proceed and wake() us.
-      const res = await this.state.blockConcurrencyWhile(() => this.session.getMessages(after));
-      if (res.messages.length) return Response.json(res, { status: 200 });
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) return Response.json({ messages: [], cursor: after }, { status: 200 });
-      await this.waiters.wait(remaining);
-    }
+    // Each read is a short serialized storage read; the wait itself is NOT held under
+    // blockConcurrencyWhile, so a concurrent postMessage can proceed and wake us.
+    const res = await longPoll(
+      this.waiters,
+      timeoutMs,
+      () => this.state.blockConcurrencyWhile(() => this.session.getMessages(after)),
+      () => ({ messages: [], cursor: after }),
+    );
+    return Response.json(res, { status: 200 });
   }
 }

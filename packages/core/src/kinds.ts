@@ -104,11 +104,19 @@ export function rolesForKind(kind: string): string[] {
   return KINDS[kind] ? Object.keys(KINDS[kind]!.roles) : [];
 }
 
-/** Assign a role by join order: creator takes the first role, the next joiner the second, etc. */
+/**
+ * Assign a role from an ordered role list by join order (0 = first joiner). The single
+ * role-assignment strategy shared by both tiers — deterministic, unlike "first unused".
+ * Falls back to "participant" when there are no defined roles or `order` runs past the end.
+ */
+export function assignRole(roleKeys: string[], order: number): string {
+  if (roleKeys.length === 0) return "participant";
+  return roleKeys[Math.min(Math.max(0, order), roleKeys.length - 1)] ?? "participant";
+}
+
+/** Assign a predefined kind's role by join order: creator first, next joiner second, etc. */
 export function roleByOrder(kind: string, order: number): string {
-  const roles = rolesForKind(kind);
-  if (roles.length === 0) return "participant";
-  return roles[Math.min(order, roles.length - 1)]!;
+  return assignRole(rolesForKind(kind), order);
 }
 
 /**
