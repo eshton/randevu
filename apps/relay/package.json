@@ -21,6 +21,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "coverage": "vitest run --project=node --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include=src/**",
     "test": "vitest run"
   },
   "dependencies": {
