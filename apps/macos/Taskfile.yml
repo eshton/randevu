@@ -1,0 +1,43 @@
+version: "3"
+
+vars:
+  SCHEME: Prata
+  PROJECT: Prata.xcodeproj
+  APP: Prata.app
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  generate:
+    desc: Generate the Xcode project from project.yml
+    cmds:
+      - xcodegen generate
+
+  build:
+    desc: Build without signing (quick check)
+    deps: [generate]
+    cmds:
+      - xattr -cr Prata/ || true
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
+  run:
+    desc: Build and launch the app
+    deps: [generate]
+    cmds:
+      # Cloud-synced folders stamp extended attributes that make codesign fail, and for the
+      # same reason the build must go to the default DerivedData rather than a local dir.
+      - xattr -cr Prata/ || true
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug build
+      - killall Prata || true
+      - |
+        DIR=$(xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} -configuration Debug -showBuildSettings 2>/dev/null \
+          | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $2; exit}')
+        open "$DIR/{{.APP}}"
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - xcodebuild -project {{.PROJECT}} -scheme {{.SCHEME}} clean || true

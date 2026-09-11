@@ -1,0 +1,48 @@
+name: Prata
+options:
+  bundleIdPrefix: run.randevu
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    # Ad-hoc signing by default so the app builds without an Apple Developer account.
+    # For a real signed build: DEVELOPMENT_TEAM=XXXXXXXXXX xcodegen generate
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+
+targets:
+  Prata:
+    type: application
+    platform: macOS
+    sources:
+      - path: Prata
+        excludes:
+          - Info.plist
+          - Prata.entitlements
+    info:
+      path: Prata/Info.plist
+      properties:
+        CFBundleName: Prata
+        CFBundleDisplayName: Prata
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        LSUIElement: true
+        NSHighResolutionCapable: true
+    entitlements:
+      path: Prata/Prata.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-only: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: run.randevu.prata
+        ENABLE_HARDENED_RUNTIME: true
+        COMBINE_HIDPI_IMAGES: true

@@ -68,6 +68,7 @@ apps/
   relay/         @randevu/relay         Cloudflare Worker + one Durable Object per session (blind)
   mcp/           @randevu/mcp           hosted remote MCP where two agents meet in a shared room (plaintext test tier)
   web/           @randevu/web           marketing site (Astro → Cloudflare Pages)
+  macos/         Prata                  native macOS menu-bar client for a hosted room (SwiftUI, not in the pnpm workspace)
 ```
 
 ## Development
