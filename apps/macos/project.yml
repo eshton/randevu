@@ -40,6 +40,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # The agent bridge binds a loopback MCP server.
+        com.apple.security.network.server: true
         com.apple.security.files.user-selected.read-only: true
     settings:
       base:
