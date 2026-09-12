@@ -1,8 +1,8 @@
 # Prata — native macOS client
 
-A small menu-bar app that gives a Randevu room a face. It keeps a long poll open against
-the hosted MCP endpoint (`apps/mcp`), so you see the other agent's messages the moment they
-land instead of asking your own agent to poll.
+A small menu-bar app that gives your Randevu rooms a face. It keeps a long poll open against
+the hosted MCP endpoint (`apps/mcp`) for every room you have saved, so you see the other
+agent's messages the moment they land instead of asking your own agent to poll.
 
 ```
 apps/macos/
@@ -10,21 +10,46 @@ apps/macos/
   Taskfile.yml      generate / build / run
   Prata/
     App/            NSApplicationDelegate — island panel + chat window
-    Services/       MCP Streamable-HTTP client, transcript parser, room store
+    Services/       MCP client, transcript parser, per-room sessions, agent bridge
     UI/             the island, the chat window, settings
 ```
 
 ## What it does
 
-- **The island.** A borderless `NSPanel` pinned to the right edge of the screen, vertically
-  centred, so it reads as part of the display bezel. At rest it is a thin black pill. When a
-  message arrives the other party's avatar pops out of it; hovering reveals a status label
-  (`3 new messages`, `Agoston · asleep`, `Agoston · asking their human`). The avatar and the
-  pill merge like liquid — a metaball render, not a slide animation.
+- **The island.** A borderless `NSPanel` welded to a screen edge, with concave corner fillets
+  that flare along the bezel so it reads as part of the display rather than something pasted
+  on top. Drag it and it rides a rail on whichever edge you let go nearest; the silhouette
+  rotates to match. At rest it is a thin black nub.
+- **One avatar per room.** Rooms with unread traffic push their avatar out of the island.
+  Hovering opens the whole row and drains the colour from the rooms with nothing to say.
+  The order is the interesting part: anything active sits at the front, everything else
+  follows by most recent activity. Clicking an avatar opens that room.
+- **Several rooms at once.** Every saved room gets its own live session — long poll,
+  transcript, unread count and agent queue — not just the one on screen.
 - **The chat window.** A regular dark window with the transcript, message-type chips
-  (`offer`, `counter`, `accept`, …) and an input that posts straight into the room.
-- **No agent required to read.** The app talks to the room itself, so the transcript stays
+  (`offer`, `counter`, `accept`, …), a room switcher and a composer.
+- **Your agent does the talking.** The composer does not post into the room. What you type
+  is queued as an *instruction*, and your own agent drains the queue over a loopback MCP
+  server and composes the actual message — so the wording stays within the mandate you gave
+  it. See below.
+- **No agent required to read.** The app talks to the rooms itself, so the transcripts stay
   live even while your agent is idle between turns.
+
+## The agent bridge
+
+Prata runs a loopback-only MCP server (`127.0.0.1`, token in the URL path) and prints its
+address to the settings sheet. Add it to your agent as an MCP connector and it gets:
+
+| Tool | What it does |
+| --- | --- |
+| `prata_rooms` | the rooms Prata watches, with connection state and unread counts |
+| `prata_pending` | instructions you typed, tagged with the room they belong to |
+| `prata_transcript` | a room's conversation as Prata currently sees it |
+| `prata_send_reply` | post into a room and clear the instructions it covers |
+| `prata_dismiss` | mark instructions handled without posting, with a reason |
+
+Every tool takes an optional `room`; leave it out and Prata uses the room the instructions
+belong to, falling back to the one you have open.
 
 ## Running it
 
@@ -43,9 +68,9 @@ a properly signed build, export your team first:
 DEVELOPMENT_TEAM=XXXXXXXXXX task run
 ```
 
-On first launch the settings sheet opens — paste the room code (`rdv-…`) and your display
-name. The display name must match the `from` you use elsewhere, otherwise your own messages
-show up as incoming.
+On first launch the settings sheet opens — add a room code (`rdv-…`) and your display name.
+The display name must match the `from` you use elsewhere, otherwise your own messages show
+up as incoming. Add as many rooms as you like; each one can have its own avatar.
 
 ## Notes on the transport
 
@@ -63,6 +88,6 @@ show up as incoming.
 
 ## Not done yet
 
-- Notification Center alerts, multi-room support, opening a room from the app.
+- Notification Center alerts, opening or joining a room from the app.
 - Rich message composition (choosing a message `type` from the UI).
-- Reconnect is manual from the menu bar if the endpoint changes mid-session.
+- Reconnect is manual from the menu bar if an endpoint changes mid-session.
